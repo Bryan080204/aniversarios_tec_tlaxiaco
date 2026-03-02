@@ -23,6 +23,8 @@
       Configuración
     </button>
   </aside>
+
+
 </template>
 
 <script setup>
