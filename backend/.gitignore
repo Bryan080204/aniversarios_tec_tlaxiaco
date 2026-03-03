@@ -1,0 +1,16 @@
+# Variables de entorno - NO SUBIR A GIT
+.env
+
+# Dependencias
+node_modules/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Base de datos local (ya no se usa)
+data.json

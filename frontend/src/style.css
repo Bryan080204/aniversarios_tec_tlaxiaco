@@ -1,0 +1,26 @@
+:root{
+  --navy-900: #09124D;
+  --navy-800: #0C1751;
+
+  --blue-600: #1B3573;
+  --blue-500: #445B84;
+
+  --slate-700: #2F3156;
+  --slate-600: #565A73;
+
+  --steel-300: #B4B7BC;
+  --mist-200: #DDE0E5;
+  --white: #FEFEFE;
+}
+
+*{ box-sizing: border-box; }
+
+body{
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: var(--mist-200);
+  color: var(--slate-700);
+}
+
+a{ color: inherit; text-decoration: none; }
+button{ font-family: inherit; }
