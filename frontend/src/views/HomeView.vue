@@ -17,26 +17,37 @@
 
         <!-- ============ INICIO / REGISTRO ============ -->
         <template v-if="active === 'inicio' || active === 'registro'">
-          <section v-if="active === 'inicio'" class="validation-preview">
-            <div class="validation-header">
-              <img src="/logo-itt.png" alt="Instituto Tecnológico de Tlaxiaco" class="validation-logo" />
-              <h2>Validar Estados</h2>
-            </div>
-            <div class="summary-cards">
-              <div class="card border-red">
-                <span class="count text-red">{{ inicioCounts.pendiente }}</span>
-                <span class="label">Sin Validar</span>
+         <transition name="fade-slide" appear>
+            <section v-if="active === 'inicio'" class="welcome-hero">
+              <div class="welcome-content">
+                <div class="welcome-badge">Panel de Administración</div>
+                <h1>Bienvenido al Sistema de <span class="text-gradient">Aniversarios</span></h1>
+                <p class="welcome-text">
+                  Gestiona la historia y los momentos más emblemáticos del Instituto Tecnológico de Tlaxiaco. 
+                  Registra eventos, valida estados y genera códigos QR institucionales.
+                </p>
+                <div class="welcome-actions">
+                  <button class="btn btn-welcome" @click="handleMenuSelect('registro')">
+                    Ir al Registro ➜
+                  </button>
+                  <div class="welcome-stats-mini">
+                    <div class="mini-stat">
+                      <span class="num text-green">{{ inicioCounts.validado }}</span>
+                      <span class="lab">Validados</span>
+                    </div>
+                    <div class="separator"></div>
+                    <div class="mini-stat">
+                      <span class="num text-red">{{ inicioCounts.pendiente }}</span>
+                      <span class="lab">Pendientes</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="card border-yellow">
-                <span class="count text-yellow">{{ inicioCounts.proceso }}</span>
-                <span class="label">En Proceso</span>
+              <div class="welcome-visual">
+                <img src="/logo-itt.png" alt="Logo ITT" class="floating-logo" />
               </div>
-              <div class="card border-green">
-                <span class="count text-green">{{ inicioCounts.validado }}</span>
-                <span class="label">Validado</span>
-              </div>
-            </div>
-          </section>
+            </section>
+          </transition>
 
           <div class="content">
             <section class="panel registration-card">
@@ -1111,5 +1122,104 @@ input:focus, select:focus { border-color: #1B3573; background: white; box-shadow
   .validation-header h2 { font-size: 2rem; }
   .summary-cards { flex-direction: column; }
   .year-dropdown { max-height: 160px; }
+}
+/* --- ESTILOS DE BIENVENIDA --- */
+.text-gradient {
+  background: linear-gradient(135deg, #1b3573 0%, #3b82f6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+}
+
+.welcome-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 80px 60px;
+  background: white;
+  margin: 30px;
+  border-radius: 30px;
+  box-shadow: 0 15px 40px rgba(0,0,0,0.03);
+  border: 1px solid #eef2f6;
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-badge {
+  background: #f0f7ff;
+  color: #1b3573;
+  padding: 6px 15px;
+  border-radius: 50px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 25px;
+  display: inline-block;
+}
+
+.welcome-content h1 {
+  font-size: 3.2rem;
+  color: #0f172a;
+  line-height: 1.1;
+  margin-bottom: 20px;
+  font-weight: 800;
+}
+
+.welcome-text {
+  font-size: 1.15rem;
+  color: #64748b;
+  max-width: 520px;
+  margin-bottom: 40px;
+  line-height: 1.6;
+}
+
+.welcome-actions {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+
+.btn-welcome {
+  background: #1b3573;
+  color: white;
+  padding: 18px 35px;
+  border-radius: 16px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 8px 20px rgba(27,53,115,0.2);
+}
+
+.btn-welcome:hover {
+  transform: translateY(-3px);
+  background: #152a5c;
+  box-shadow: 0 12px 25px rgba(27,53,115,0.3);
+}
+
+.welcome-stats-mini { display: flex; align-items: center; gap: 20px; }
+.mini-stat { display: flex; flex-direction: column; }
+.mini-stat .num { font-size: 1.6rem; font-weight: 800; }
+.mini-stat .lab { font-size: 0.8rem; color: #94a3b8; font-weight: 600; }
+.separator { width: 1px; height: 35px; background: #e2e8f0; }
+
+.floating-logo {
+  height: 250px;
+  filter: drop-shadow(0 15px 25px rgba(0,0,0,0.1));
+  animation: float 5s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+/* Animación de entrada */
+.fade-slide-enter-active {
+  transition: all 0.5s ease-out;
+}
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
 }
 </style>
