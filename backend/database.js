@@ -10,7 +10,7 @@ const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT) || 5432,
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
+  password: String(process.env.DB_PASSWORD ?? ''),
   database: process.env.DB_NAME || 'basetec',
 });
 
@@ -165,12 +165,20 @@ export const database = {
   },
 
   async updateEstadoRegistro(tipo, id, estado) {
-    const tabla = tipo === 'alumno' ? 'alumnos' : 'eventos';
-    const result = await pool.query(
-      `UPDATE ${tabla} SET estado = $1 WHERE id = $2 RETURNING *`,
-      [estado, id]
-    );
-    return result.rows[0];
+    try {
+      const tabla = tipo === 'alumno' ? 'alumnos' : 'eventos';
+      // Extract numeric ID from composite ID (e.g., "alumno-5" -> 5)
+      const numericId = id.split('-')[1] || id;
+      
+      const result = await pool.query(
+        `UPDATE ${tabla} SET estado = $1 WHERE id = $2 RETURNING *`,
+        [estado, numericId]
+      );
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error updating status:', error);
+      return null;
+    }
   },
 
   // ===== UTILIDADES =====

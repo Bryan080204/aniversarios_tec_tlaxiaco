@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="dashboard-container">
     <header class="dashboard-header">
       <img src="/logo-itt.png" alt="Instituto Tecnológico de Tlaxiaco" class="logo-instituto">
@@ -49,24 +49,31 @@
               </span>
             </td>
             <td class="text-center actions-cell">
-              <button 
-                class="status-btn" 
-                :class="{ active: item.estado === 0 }"
-                @click="cambiarEstado(item, 0)"
-                title="Sin Validar"
-              >🔴</button>
-              <button 
-                class="status-btn" 
-                :class="{ active: item.estado === 1 }"
-                @click="cambiarEstado(item, 1)"
-                title="En Proceso"
-              >🟡</button>
-              <button 
-                class="status-btn" 
-                :class="{ active: item.estado === 2 }"
-                @click="cambiarEstado(item, 2)"
-                title="Validado"
-              >🟢</button>
+              <div class="status-group">
+                <button 
+                  class="status-btn" 
+                  :class="{ active: item.estado === 0 }"
+                  @click="cambiarEstado(item, 0)"
+                  title="Sin Validar"
+                >🔴</button>
+                <button 
+                  class="status-btn" 
+                  :class="{ active: item.estado === 1 }"
+                  @click="cambiarEstado(item, 1)"
+                  title="En Proceso"
+                >🟡</button>
+                <button 
+                  class="status-btn" 
+                  :class="{ active: item.estado === 2 }"
+                  @click="cambiarEstado(item, 2)"
+                  title="Validado"
+                >🟢</button>
+              </div>
+              <button
+                class="edit-nav-btn"
+                @click="irARegistro()"
+                title="Editar en registro"
+              >✏️ Editar</button>
             </td>
           </tr>
           <tr v-if="registros.length === 0 && !isLoading">
@@ -82,9 +89,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { validacionAPI } from '../services/api.js';
 
 const emit = defineEmits(['toast']);
+const router = useRouter();
 
 const registros = ref([]);
 const isLoading = ref(true);
@@ -119,7 +128,6 @@ async function cargarRegistros() {
   } catch (error) {
     console.warn('No se pudo conectar al backend');
     backendConnected.value = false;
-    // Datos de ejemplo si no hay conexión
     registros.value = [
       { id: 'demo-1', nombre: 'Registro Demo 1', año: '2026', descripcion: 'Sin conexión al servidor', estado: 0 },
       { id: 'demo-2', nombre: 'Registro Demo 2', año: '2026', descripcion: 'Inicie el backend con: npm run server', estado: 1 },
@@ -133,7 +141,7 @@ async function cambiarEstado(item, nuevoEstado) {
   if (item.estado === nuevoEstado) return;
   
   const estadoAnterior = item.estado;
-  item.estado = nuevoEstado; // Optimistic update
+  item.estado = nuevoEstado;
 
   try {
     if (backendConnected.value && !item.id.startsWith('demo')) {
@@ -142,9 +150,13 @@ async function cambiarEstado(item, nuevoEstado) {
     }
     emit('toast', `Estado actualizado a: ${getEstadoText(nuevoEstado)}`, 'success');
   } catch (error) {
-    item.estado = estadoAnterior; // Revert
+    item.estado = estadoAnterior;
     emit('toast', 'Error al actualizar estado', 'error');
   }
+}
+
+function irARegistro() {
+  router.push('/registro');
 }
 
 onMounted(() => {
@@ -163,9 +175,12 @@ onMounted(() => {
 .count { font-size: 2rem; font-weight: bold; display: block; }
 .label { color: #565A73; font-size: 0.8rem; font-weight: 600; }
 
-.border-red { border-color: #EF4444; } .text-red { color: #EF4444; }
-.border-yellow { border-color: #F59E0B; } .text-yellow { color: #F59E0B; }
-.border-green { border-color: #10B981; } .text-green { color: #10B981; }
+.border-red { border-color: #EF4444; }
+.text-red { color: #EF4444; }
+.border-yellow { border-color: #F59E0B; }
+.text-yellow { color: #F59E0B; }
+.border-green { border-color: #10B981; }
+.text-green { color: #10B981; }
 
 .main-content { background: #FEFEFE; padding: 20px; border-radius: 10px; border: 1px solid #DDE0E5; }
 .section-title { color: #09124D; font-size: 1.1rem; margin: 0 0 20px; }
@@ -181,7 +196,19 @@ onMounted(() => {
 
 .no-data { text-align: center; padding: 40px; color: #B4B7BC; font-style: italic; }
 
-.actions-cell { display: flex; gap: 6px; justify-content: center; }
+.actions-cell { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 220px; }
+.status-group { display: flex; gap: 6px; }
+.edit-nav-btn {
+  border: 1px solid #1B3573;
+  color: #1B3573;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.edit-nav-btn:hover { background: #dbe4ff; }
 .status-btn { background: none; border: 2px solid transparent; cursor: pointer; font-size: 18px; padding: 4px 8px; border-radius: 8px; transition: 0.2s; opacity: 0.5; }
 .status-btn:hover { opacity: 1; transform: scale(1.1); }
 .status-btn.active { opacity: 1; border-color: #1B3573; background: #f0f4ff; }
@@ -189,4 +216,5 @@ onMounted(() => {
 .loading-box { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 40px; color: #64748b; }
 .spinner-small { width: 24px; height: 24px; border: 3px solid #e2e8f0; border-top-color: #1B3573; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.text-center { text-align: center; }
 </style>

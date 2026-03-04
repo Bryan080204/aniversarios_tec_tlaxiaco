@@ -17,6 +17,27 @@
 
         <!-- ============ INICIO / REGISTRO ============ -->
         <template v-if="active === 'inicio' || active === 'registro'">
+          <section v-if="active === 'inicio'" class="validation-preview">
+            <div class="validation-header">
+              <img src="/logo-itt.png" alt="Instituto Tecnológico de Tlaxiaco" class="validation-logo" />
+              <h2>Validar Estados</h2>
+            </div>
+            <div class="summary-cards">
+              <div class="card border-red">
+                <span class="count text-red">{{ inicioCounts.pendiente }}</span>
+                <span class="label">Sin Validar</span>
+              </div>
+              <div class="card border-yellow">
+                <span class="count text-yellow">{{ inicioCounts.proceso }}</span>
+                <span class="label">En Proceso</span>
+              </div>
+              <div class="card border-green">
+                <span class="count text-green">{{ inicioCounts.validado }}</span>
+                <span class="label">Validado</span>
+              </div>
+            </div>
+          </section>
+
           <div class="content">
             <section class="panel registration-card">
               <div class="panel-header">
@@ -45,12 +66,29 @@
                   <h4 class="section-subtitle">Datos del Aniversario</h4>
                   <div class="field full-width">
                     <span>Año de aniversario</span>
-                    <input 
-                      v-model="anioAniversario" 
-                      @input="validarAnio"
-                      placeholder="Ej: 2026"
-                      maxlength="4"
-                    />
+                    <div class="year-combobox" @keydown.esc="showYearMenu = false">
+                      <input 
+                        v-model="anioAniversario" 
+                        @input="validarAnio"
+                        @focus="showYearMenu = true"
+                        @blur="cerrarMenuAniosConDelay"
+                        placeholder="Escribe o selecciona"
+                        maxlength="4"
+                      />
+                      <button class="year-toggle" type="button" @mousedown.prevent @click="toggleYearMenu">▾</button>
+                      <div v-if="showYearMenu" class="year-dropdown">
+                        <button
+                          v-for="anio in filteredYearOptions"
+                          :key="anio"
+                          type="button"
+                          class="year-option"
+                          @mousedown.prevent
+                          @click="seleccionarAnio(anio)"
+                        >
+                          {{ anio }}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div class="field full-width">
@@ -60,13 +98,12 @@
                       placeholder="Ej: Celebración del aniversario institucional"
                     />
                   </div>
-                </div>
-
-                <div class="form-section divider">
-                  <h4 class="section-subtitle">Información Adicional</h4>
                   <div class="field full-width">
-                    <span>Texto / URL para QR</span>
-                    <input v-model="urlBaseQR" placeholder="https://tec-tlaxiaco.mx/aniversario" />
+                    <span>URLs de imágenes</span>
+                    <p class="field-hint">Ingresa de 3 a 6 imágenes (una URL por campo).</p>
+                    <div class="images-url-grid">
+                      <input v-for="(_, index) in urlImagenesForm" :key="index" v-model="urlImagenesForm[index]" :placeholder="`Imagen ${index + 1}: https://...`" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -84,8 +121,25 @@
               <section class="panel lowerRight">
                 <h3>Últimos Registros</h3>
                 <div class="anniversary-grid">
-                  <div class="anniversary-cell" v-for="(imagen, index) in imagenesAniversario" :key="index">
-                    <img :src="imagen" :alt="`Aniversario ${index + 1}`" />
+                  <div
+                    class="anniversary-cell"
+                    v-for="(imagen, index) in imagenesAniversario"
+                    :key="index"
+                    @mouseleave="cerrarMenuImagen"
+                  >
+                    <img
+                      v-if="imagen"
+                      :src="imagen"
+                      :alt="`Aniversario ${index + 1}`"
+                      @click="abrirImagen(imagen)"
+                    />
+                    <div v-else class="empty-image-slot">Sin imagen</div>
+                    <button class="image-menu-trigger" @click.stop="toggleMenu(index)">⋯</button>
+                    <div v-if="activeImageMenu === index" class="image-menu" @mouseleave="cerrarMenuImagen">
+                      <button @click.stop="eliminarImagen(index)">Eliminar</button>
+                      <button @click.stop="abrirEditorImagen(index, 'edit')">Editar</button>
+                      <button @click.stop="abrirEditorImagen(index, 'add')">Agregar</button>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -217,25 +271,19 @@
     </div>
 
     <!-- MODAL EDITAR -->
-    <ModalDialog :show="showEditModal" title="Editar Alumno" @close="showEditModal = false">
+    <ModalDialog :show="showEditModal" title="Editar Registro de Aniversario" @close="showEditModal = false">
       <div class="modal-form">
         <div class="field">
-          <span>Nombre Completo</span>
-          <input v-model="editForm.nombre" />
+          <span>Año de aniversario</span>
+          <input v-model="editForm.anio" maxlength="4" @input="editForm.anio = String(editForm.anio || '').replace(/\D/g, '').slice(0,4)" />
         </div>
         <div class="field">
-          <span>Número de Control</span>
-          <input v-model="editForm.numero_control" maxlength="8" />
+          <span>Descripción</span>
+          <input v-model="editForm.descripcion" />
         </div>
         <div class="field">
-          <span>Carrera</span>
-          <select v-model="editForm.carrera">
-            <option value="Sistemas">Ing. en Sistemas Computacionales</option>
-            <option value="Civil">Ing. en Sistemas Civiles</option>
-            <option value="Gestion">Ing. en Gestión Empresarial</option>
-            <option value="Mecatronica">Ing. Mecatrónica</option>
-            <option value="Administracion">Lic. en Administración</option>
-          </select>
+          <span>URL de imagen</span>
+          <input v-model="editForm.imagenUrl" placeholder="https://..." />
         </div>
         <div class="field">
           <span>Estado</span>
@@ -262,6 +310,31 @@
       </template>
     </ModalDialog>
 
+    <div v-if="previewImageUrl" class="image-preview-overlay" @click="cerrarPreviewImagen">
+      <div class="image-preview-content" @click.stop>
+        <button class="preview-close" @click="cerrarPreviewImagen">✕</button>
+        <img :src="previewImageUrl" alt="Vista previa de aniversario" />
+      </div>
+    </div>
+
+    <ModalDialog
+      :show="showImageEditorModal"
+      :title="imageEditorMode === 'edit' ? 'Editar Imagen' : 'Agregar Imagen'"
+      size="small"
+      @close="showImageEditorModal = false"
+    >
+      <div class="modal-form">
+        <div class="field">
+          <span>URL de la imagen</span>
+          <input v-model="imageEditorUrl" placeholder="https://..." />
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn btn-outline" @click="showImageEditorModal = false">Cancelar</button>
+        <button class="btn btn-primary" @click="guardarImagenEditor">Guardar</button>
+      </template>
+    </ModalDialog>
+
   </div>
 </template>
 
@@ -280,11 +353,12 @@ import { alumnosAPI, estadisticasAPI } from '../services/api.js'
 
 const route = useRoute()
 const router = useRouter()
+const active = ref(route.meta.section || 'inicio')
 
 // --- ESTADO GLOBAL ---
-const active = ref('inicio')
 const anioAniversario = ref('')
 const descripcionAniversario = ref('')
+const urlImagenesForm = ref(['', '', '', '', '', ''])
 const urlBaseQR = ref('https://tec-tlaxiaco.mx/aniversario')
 const qrFinalValue = ref('https://tec-tlaxiaco.mx/aniversario')
 const estadoActual = ref(0)
@@ -299,16 +373,47 @@ const busqueda = ref('')
 const filtroEstado = ref('')
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
+const showImageEditorModal = ref(false)
 const editForm = ref({})
 const alumnoAEliminar = ref(null)
-const imagenesAniversario = [
+const activeImageMenu = ref(null)
+const previewImageUrl = ref('')
+const showYearMenu = ref(false)
+const imagenesPorAnio = ref({})
+const imageEditorMode = ref('edit')
+const imageEditorIndex = ref(-1)
+const imageEditorUrl = ref('')
+const demoRegistros = [
+  {
+    id: 'demo-2026',
+    nombre: 'Aniversario 2026',
+    numero_control: '20260001',
+    carrera: 'Celebración institucional del TEC Tlaxiaco',
+    estado: 2
+  },
+  {
+    id: 'demo-2025',
+    nombre: 'Aniversario 2025',
+    numero_control: '20250001',
+    carrera: 'Feria tecnológica y actividades académicas',
+    estado: 1
+  },
+  {
+    id: 'demo-2024',
+    nombre: 'Aniversario 2024',
+    numero_control: '20240001',
+    carrera: 'Evento cultural y deportivo',
+    estado: 0
+  }
+]
+const imagenesAniversario = ref([
   'https://picsum.photos/seed/aniversario-1/500/320',
   'https://picsum.photos/seed/aniversario-2/500/320',
   'https://picsum.photos/seed/aniversario-3/500/320',
   'https://picsum.photos/seed/aniversario-4/500/320',
   'https://picsum.photos/seed/aniversario-5/500/320',
   'https://picsum.photos/seed/aniversario-6/500/320'
-]
+])
 
 // --- TOAST ---
 const toast = ref({ show: false, message: '', type: 'info' })
@@ -358,8 +463,23 @@ async function cargarDatos() {
   } catch (error) {
     console.warn('Backend no disponible, usando modo local')
     backendConnected.value = false
+    cargarDatosDemo()
   } finally {
     isLoadingList.value = false
+  }
+}
+
+function cargarDatosDemo() {
+  listaAlumnos.value = [...demoRegistros]
+  estadisticas.value = {
+    totalAlumnos: demoRegistros.length,
+    totalEventos: 0,
+    porCarrera: [],
+    porEstado: [
+      { estado: 0, cantidad: demoRegistros.filter(item => item.estado === 0).length },
+      { estado: 1, cantidad: demoRegistros.filter(item => item.estado === 1).length },
+      { estado: 2, cantidad: demoRegistros.filter(item => item.estado === 2).length }
+    ]
   }
 }
 
@@ -379,6 +499,24 @@ const statusColorClass = computed(() => {
   if (estadoActual.value === 1) return 'bg-yellow'
   if (estadoActual.value === 2) return 'bg-green'
   return 'bg-red'
+})
+
+const inicioCounts = computed(() => {
+  return {
+    pendiente: listaAlumnos.value.filter(r => r.estado === 0).length,
+    proceso: listaAlumnos.value.filter(r => r.estado === 1).length,
+    validado: listaAlumnos.value.filter(r => r.estado === 2).length,
+  }
+})
+
+const listaAniosRegistro = computed(() => {
+  const actual = new Date().getFullYear()
+  return Array.from({ length: actual - 1991 + 1 }, (_, i) => String(1991 + i))
+})
+
+const filteredYearOptions = computed(() => {
+  if (!anioAniversario.value) return listaAniosRegistro.value
+  return listaAniosRegistro.value.filter(anio => anio.includes(anioAniversario.value))
 })
 
 // --- FILTROS ---
@@ -404,6 +542,23 @@ const alumnosFiltrados = computed(() => {
 // --- VALIDACIONES DE ENTRADA ---
 function validarAnio() {
   anioAniversario.value = anioAniversario.value.replace(/\D/g, '').slice(0, 4)
+  showYearMenu.value = true
+}
+
+function seleccionarAnio(valor) {
+  if (!valor) return
+  anioAniversario.value = valor
+  showYearMenu.value = false
+}
+
+function toggleYearMenu() {
+  showYearMenu.value = !showYearMenu.value
+}
+
+function cerrarMenuAniosConDelay() {
+  setTimeout(() => {
+    showYearMenu.value = false
+  }, 150)
 }
 
 // --- GENERACIÓN DE REGISTRO ---
@@ -422,6 +577,19 @@ async function generarRegistroYQR() {
 
   if (!descripcionAniversario.value.trim()) {
     mostrarToast('La descripción es obligatoria', 'error')
+    return
+  }
+
+  const urlsCapturadas = urlImagenesForm.value.map(url => url.trim()).filter(Boolean)
+
+  if (urlsCapturadas.length < 3 || urlsCapturadas.length > 6) {
+    mostrarToast('Debes ingresar entre 3 y 6 URLs de imágenes', 'error')
+    return
+  }
+
+  const yaExisteAnio = listaAlumnos.value.some(a => getAnioRegistro(a.nombre) === anioAniversario.value)
+  if (yaExisteAnio) {
+    mostrarToast('Solo se permite una imagen por año. Ese año ya está registrado.', 'error')
     return
   }
 
@@ -454,9 +622,11 @@ async function generarRegistroYQR() {
     // Generación del texto para el QR
     const dataString = `${urlBaseQR.value}/${anioAniversario.value}?descripcion=${encodeURIComponent(descripcionAniversario.value.trim())}`
     qrFinalValue.value = dataString
+    aplicarUrlsImagenesDesdeFormulario(anioAniversario.value)
     estadoActual.value = 2
     
     mostrarToast('Registro de aniversario generado correctamente', 'success')
+    limpiarFormulario()
   } catch (error) {
     mostrarToast(error.response?.data?.error || 'Error al registrar', 'error')
   } finally {
@@ -467,6 +637,7 @@ async function generarRegistroYQR() {
 function limpiarFormulario() {
   anioAniversario.value = ''
   descripcionAniversario.value = ''
+  urlImagenesForm.value = ['', '', '', '', '', '']
   urlBaseQR.value = 'https://tec-tlaxiaco.mx/aniversario'
   qrFinalValue.value = 'https://tec-tlaxiaco.mx/aniversario'
   estadoActual.value = 0
@@ -474,23 +645,54 @@ function limpiarFormulario() {
 
 // --- EDITAR / ELIMINAR ---
 function editarAlumno(alumno) {
-  editForm.value = { ...alumno }
+  const anio = getAnioRegistro(alumno.nombre)
+  editForm.value = {
+    id: alumno.id,
+    numero_control: alumno.numero_control,
+    estado: alumno.estado,
+    anio,
+    descripcion: alumno.carrera,
+    imagenUrl: imagenesPorAnio.value[anio] || ''
+  }
   showEditModal.value = true
 }
 
 async function guardarEdicion() {
+  if (!editForm.value.anio || String(editForm.value.anio).length !== 4) {
+    mostrarToast('El año debe tener 4 dígitos', 'error')
+    return
+  }
+
+  if (!String(editForm.value.descripcion || '').trim()) {
+    mostrarToast('La descripción es obligatoria', 'error')
+    return
+  }
+
+  const payload = {
+    nombre: `Aniversario ${editForm.value.anio}`,
+    numero_control: editForm.value.numero_control,
+    carrera: editForm.value.descripcion,
+    estado: editForm.value.estado,
+  }
+
   try {
     if (backendConnected.value) {
-      await alumnosAPI.update(editForm.value.id, editForm.value)
+      await alumnosAPI.update(editForm.value.id, payload)
       await cargarDatos()
     } else {
       const index = listaAlumnos.value.findIndex(a => a.id === editForm.value.id)
       if (index !== -1) {
-        listaAlumnos.value[index] = { ...editForm.value }
+        listaAlumnos.value[index] = { ...listaAlumnos.value[index], ...payload }
       }
     }
+
+    if (String(editForm.value.imagenUrl || '').trim()) {
+      imagenesPorAnio.value[editForm.value.anio] = editForm.value.imagenUrl.trim()
+      refrescarImagenesDesdeMapa()
+    }
+
     showEditModal.value = false
-    mostrarToast('Alumno actualizado correctamente', 'success')
+    mostrarToast('Registro actualizado correctamente', 'success')
   } catch (error) {
     mostrarToast('Error al actualizar', 'error')
   }
@@ -541,6 +743,73 @@ function getAnioRegistro(nombre) {
   return match ? match[0] : 'N/A'
 }
 
+function abrirImagen(url) {
+  if (!url) return
+  previewImageUrl.value = url
+}
+
+function cerrarPreviewImagen() {
+  previewImageUrl.value = ''
+}
+
+function toggleMenu(index) {
+  activeImageMenu.value = activeImageMenu.value === index ? null : index
+}
+
+function cerrarMenuImagen() {
+  activeImageMenu.value = null
+}
+
+function aplicarUrlsImagenesDesdeFormulario(anio) {
+  const urls = urlImagenesForm.value.map(url => url.trim()).filter(Boolean)
+
+  if (urls.length === 0) return
+
+  imagenesPorAnio.value[anio] = urls[0]
+
+  const base = Array(6).fill('')
+  urls.slice(0, 6).forEach((url, index) => {
+    base[index] = url
+  })
+  imagenesAniversario.value = base
+}
+
+function refrescarImagenesDesdeMapa() {
+  const urls = Object.values(imagenesPorAnio.value)
+  const base = Array(6).fill('')
+  urls.slice(0, 6).forEach((url, index) => {
+    base[index] = url
+  })
+  imagenesAniversario.value = base
+}
+
+function eliminarImagen(index) {
+  imagenesAniversario.value[index] = ''
+  activeImageMenu.value = null
+}
+
+function abrirEditorImagen(index, mode) {
+  imageEditorIndex.value = index
+  imageEditorMode.value = mode
+  imageEditorUrl.value = mode === 'edit' ? (imagenesAniversario.value[index] || '') : ''
+  showImageEditorModal.value = true
+  activeImageMenu.value = null
+}
+
+function guardarImagenEditor() {
+  if (!imageEditorUrl.value.trim()) {
+    mostrarToast('Debes ingresar una URL de imagen válida', 'error')
+    return
+  }
+
+  imagenesAniversario.value[imageEditorIndex.value] = imageEditorUrl.value.trim()
+  showImageEditorModal.value = false
+  mostrarToast(
+    imageEditorMode.value === 'edit' ? 'Imagen actualizada correctamente' : 'Imagen agregada correctamente',
+    'success'
+  )
+}
+
 function exportarCSV() {
   const headers = ['Registro', 'Año', 'Descripción', 'Estado']
   const rows = alumnosFiltrados.value.map(a => [
@@ -568,6 +837,33 @@ function exportarCSV() {
 .content-area { flex: 1; display: flex; flex-direction: column; }
 .content { padding: 20px; display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 20px; }
 
+.validation-preview { padding: 16px 22px 14px; border-bottom: 1px solid #d9dde6; }
+.validation-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.validation-header h2 { margin: 0; color: #09124D; font-size: 2rem; font-weight: 800; }
+.validation-logo { height: 52px; width: auto; }
+.summary-cards { display: flex; gap: 14px; }
+.card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  border-bottom-width: 4px;
+  flex: 1;
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+.count { font-size: 1.9rem; font-weight: 800; line-height: 1; margin-bottom: 8px; }
+.label { color: #3a4567; font-size: 1.05rem; font-weight: 700; }
+.border-red { border-bottom-color: #EF4444; }
+.border-yellow { border-bottom-color: #F59E0B; }
+.border-green { border-bottom-color: #10B981; }
+.text-red { color: #EF4444; }
+.text-yellow { color: #F59E0B; }
+.text-green { color: #10B981; }
+
 /* PANELES */
 .panel { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
@@ -590,9 +886,47 @@ function exportarCSV() {
 .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 .field { display: flex; flex-direction: column; gap: 8px; }
 .field span { font-size: 13px; font-weight: 700; color: #334155; }
+.field-hint { margin: -2px 0 2px; font-size: 12px; color: #64748b; }
 .full-width { grid-column: span 2; }
 input, select { padding: 12px 16px; border-radius: 12px; border: 1.5px solid #e2e8f0; font-size: 14px; outline: none; transition: 0.2s; background: #f8fafc; width: 100%; box-sizing: border-box; }
 input:focus, select:focus { border-color: #1B3573; background: white; box-shadow: 0 0 0 3px rgba(27,53,115,0.1); }
+.images-url-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.year-combobox { position: relative; display: flex; align-items: center; }
+.year-combobox input { padding-right: 44px; }
+.year-toggle {
+  position: absolute;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+}
+.year-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  z-index: 30;
+}
+.year-option {
+  width: 100%;
+  border: none;
+  background: #fff;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.year-option:hover { background: #f1f5f9; }
 
 /* BOTONES */
 .form-footer { display: flex; gap: 15px; margin-top: 30px; }
@@ -621,12 +955,107 @@ input:focus, select:focus { border-color: #1B3573; background: white; box-shadow
   border-radius: 16px;
   overflow: hidden;
   height: 100px;
+  position: relative;
 }
 .anniversary-cell img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  cursor: pointer;
+}
+.empty-image-slot {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2f7;
+}
+.image-menu-trigger {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(9, 18, 77, 0.8);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  display: none;
+  cursor: pointer;
+}
+.anniversary-cell:hover .image-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-menu {
+  position: absolute;
+  top: 36px;
+  right: 8px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 95px;
+  z-index: 20;
+}
+.image-menu button {
+  width: 100%;
+  border: none;
+  background: #fff;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+.image-menu button:hover {
+  background: #f1f5f9;
+}
+
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 20px;
+}
+.image-preview-content {
+  position: relative;
+  max-width: 900px;
+  max-height: 85vh;
+  width: 100%;
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px;
+}
+.image-preview-content img {
+  width: 100%;
+  max-height: calc(85vh - 20px);
+  object-fit: contain;
+  border-radius: 10px;
+  display: block;
+}
+.preview-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(9, 18, 77, 0.9);
+  color: #fff;
+  cursor: pointer;
 }
 
 /* SECCIONES INFORMES Y CONFIG */
@@ -678,5 +1107,9 @@ input:focus, select:focus { border-color: #1B3573; background: white; box-shadow
   .content { grid-template-columns: 1fr; }
   .input-row { grid-template-columns: 1fr; }
   .full-width { grid-column: span 1; }
+  .images-url-grid { grid-template-columns: 1fr; }
+  .validation-header h2 { font-size: 2rem; }
+  .summary-cards { flex-direction: column; }
+  .year-dropdown { max-height: 160px; }
 }
 </style>

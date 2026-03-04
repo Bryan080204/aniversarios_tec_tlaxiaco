@@ -16,15 +16,15 @@
     </button>
 
     <button class="item" :class="{ active: active === 'reportes' }" @click="$emit('select', 'reportes')">
-      Informes
-    </button>
-
-    <button class="item" :class="{ active: active === 'config' }" @click="$emit('select', 'config')">
-      Configuración
+      Lista de Registros
     </button>
 
     <button class="item" :class="{ active: active === 'validacion' }" @click="$emit('select', 'validacion')">
       Validación
+    </button>
+
+    <button class="item" :class="{ active: active === 'config' }" @click="$emit('select', 'config')">
+      Configuración
     </button>
   </aside>
 
