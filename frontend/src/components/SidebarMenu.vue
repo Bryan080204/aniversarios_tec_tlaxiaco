@@ -22,6 +22,10 @@
     <button class="item" :class="{ active: active === 'config' }" @click="$emit('select', 'config')">
       Configuración
     </button>
+
+    <button class="item" :class="{ active: active === 'validacion' }" @click="$emit('select', 'validacion')">
+      Validación
+    </button>
   </aside>
 
 
@@ -46,9 +50,9 @@ defineEmits(['select'])
 /* Caja del logo grande */
 .logoBox{
   width: 100%;
-  background: rgba(255,255,255,0.10);
-  border-radius: 16px;
-  padding: 12px;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
   display: flex;
   justify-content: center;
   align-items: center;

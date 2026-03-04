@@ -13,10 +13,10 @@
           @close="toast.show = false"
         />
 
+        <AppHeader />
+
         <!-- ============ INICIO / REGISTRO ============ -->
         <template v-if="active === 'inicio' || active === 'registro'">
-          <AppHeader />
-
           <div class="content">
             <section class="panel registration-card">
               <div class="panel-header">
@@ -24,45 +24,41 @@
                   <h3>Formulario de Registro / Control</h3>
                   <p class="subtitle">Sistema de registro para eventos del TEC Tlaxiaco</p>
                 </div>
-                <div class="status-indicator" :class="statusColorClass" @click="active = 'validacion'">
-                  <span class="status-label">ESTADO</span>
-                  <div class="status-dot"></div>
+                <div class="header-right">
+                  <div class="status-indicator" :class="statusColorClass" @click="active = 'validacion'">
+                    <span class="status-label">ESTADO</span>
+                    <div class="status-dot"></div>
+                  </div>
+                  <QrCard
+                    class="qr-inline"
+                    :value="qrFinalValue"
+                    :size="88"
+                    :margin="1"
+                    :show-text="false"
+                    logo-src="/logo-itt.png"
+                  />
                 </div>
               </div>
 
               <div class="form-body">
                 <div class="form-section">
-                  <h4 class="section-subtitle">Datos del Alumno</h4>
+                  <h4 class="section-subtitle">Datos del Aniversario</h4>
                   <div class="field full-width">
-                    <span>Nombre Completo</span>
+                    <span>Año de aniversario</span>
                     <input 
-                      v-model="nombreAlumno" 
-                      @input="validarNombre"
-                      placeholder="Ej: Juan Pérez Nicolás" 
+                      v-model="anioAniversario" 
+                      @input="validarAnio"
+                      placeholder="Ej: 2026"
+                      maxlength="4"
                     />
                   </div>
 
-                  <div class="input-row">
-                    <div class="field">
-                      <span>Número de Control</span>
-                      <input 
-                        v-model="numeroControl" 
-                        @input="validarControl"
-                        placeholder="Ej: 20730001" 
-                        maxlength="8" 
-                      />
-                    </div>
-                    <div class="field">
-                      <span>Carrera</span>
-                      <select v-model="carreraAlumno">
-                        <option value="" disabled selected>Seleccionar...</option>
-                        <option value="Sistemas">Ing. en Sistemas Computacionales</option>
-                        <option value="Civil">Ing. en Sistemas Civiles</option>
-                        <option value="Gestion">Ing. en Gestión Empresarial</option>
-                        <option value="Mecatronica">Ing. Mecatrónica</option>
-                        <option value="Administracion">Lic. en Administración</option>
-                      </select>
-                    </div>
+                  <div class="field full-width">
+                    <span>Descripción</span>
+                    <input
+                      v-model="descripcionAniversario"
+                      placeholder="Ej: Celebración del aniversario institucional"
+                    />
                   </div>
                 </div>
 
@@ -85,19 +81,12 @@
             </section>
 
             <div class="right-column">
-              <div class="qr-positioner">
-                <QrCard :value="qrFinalValue" />
-              </div>
-
               <section class="panel lowerRight">
                 <h3>Últimos Registros</h3>
-                <LoadingSpinner v-if="isLoadingList" text="Cargando..." />
-                <div v-else class="grid">
-                  <div class="cell" v-for="alumno in listaAlumnos.slice(0, 6)" :key="alumno.id">
-                    <p class="cell-name">{{ alumno.nombre }}</p>
-                    <p class="cell-sub">{{ alumno.numero_control }} - {{ alumno.carrera }}</p>
+                <div class="anniversary-grid">
+                  <div class="anniversary-cell" v-for="(imagen, index) in imagenesAniversario" :key="index">
+                    <img :src="imagen" :alt="`Aniversario ${index + 1}`" />
                   </div>
-                  <div class="cell empty" v-for="i in Math.max(0, 6 - listaAlumnos.length)" :key="'empty-'+i"></div>
                 </div>
               </section>
             </div>
@@ -109,7 +98,7 @@
           <div class="full-view fade-in">
             <section class="panel main-panel">
               <div class="panel-header">
-                <h3>Reporte de Alumnos Registrados</h3>
+                <h3>Reporte de Registros de Aniversario</h3>
                 <button class="btn btn-outline" @click="exportarCSV">
                   📥 Exportar CSV
                 </button>
@@ -120,25 +109,19 @@
                   <span class="number">{{ estadisticas.totalAlumnos || listaAlumnos.length }}</span>
                   <span class="label">Total de Registros</span>
                 </div>
-                <div class="stat-box secondary" v-for="stat in estadisticas.porCarrera" :key="stat.carrera">
-                  <span class="number">{{ stat.cantidad }}</span>
-                  <span class="label">{{ stat.carrera }}</span>
-                </div>
               </div>
 
               <!-- BUSCADOR -->
               <SearchBar 
                 v-model="busqueda" 
-                placeholder="Buscar por nombre o número de control..."
+                placeholder="Buscar por registro, año o descripción..."
               >
                 <template #filters>
-                  <select v-model="filtroCarrera" class="filter-select">
-                    <option value="">Todas las carreras</option>
-                    <option value="Sistemas">Sistemas</option>
-                    <option value="Civil">Civil</option>
-                    <option value="Gestion">Gestión</option>
-                    <option value="Mecatronica">Mecatrónica</option>
-                    <option value="Administracion">Administración</option>
+                  <select v-model="filtroEstado" class="filter-select">
+                    <option value="">Todos los estados</option>
+                    <option value="0">Sin validar</option>
+                    <option value="1">En proceso</option>
+                    <option value="2">Validado</option>
                   </select>
                 </template>
               </SearchBar>
@@ -148,9 +131,9 @@
                 <table class="report-table">
                   <thead>
                     <tr>
-                      <th>Nombre del Alumno</th>
-                      <th>N. Control</th>
-                      <th>Carrera</th>
+                      <th>Registro</th>
+                      <th>Año</th>
+                      <th>Descripción</th>
                       <th>Estado</th>
                       <th class="text-center">Acciones</th>
                     </tr>
@@ -158,7 +141,7 @@
                   <tbody>
                     <tr v-for="alumno in alumnosFiltrados" :key="alumno.id || alumno.numero_control">
                       <td>{{ alumno.nombre }}</td>
-                      <td><code>{{ alumno.numero_control }}</code></td>
+                      <td><code>{{ getAnioRegistro(alumno.nombre) }}</code></td>
                       <td>{{ alumno.carrera }}</td>
                       <td>
                         <span class="badge" :class="getBadgeClass(alumno.estado)">
@@ -172,7 +155,7 @@
                     </tr>
                     <tr v-if="alumnosFiltrados.length === 0">
                       <td colspan="5" class="empty-msg">
-                        {{ busqueda || filtroCarrera ? 'No se encontraron resultados' : 'No hay registros almacenados.' }}
+                        {{ busqueda || filtroEstado ? 'No se encontraron resultados' : 'No hay registros de aniversario.' }}
                       </td>
                     </tr>
                   </tbody>
@@ -300,9 +283,8 @@ const router = useRouter()
 
 // --- ESTADO GLOBAL ---
 const active = ref('inicio')
-const nombreAlumno = ref('')
-const numeroControl = ref('')
-const carreraAlumno = ref('')
+const anioAniversario = ref('')
+const descripcionAniversario = ref('')
 const urlBaseQR = ref('https://tec-tlaxiaco.mx/aniversario')
 const qrFinalValue = ref('https://tec-tlaxiaco.mx/aniversario')
 const estadoActual = ref(0)
@@ -314,11 +296,19 @@ const backendConnected = ref(false)
 const isLoading = ref(false)
 const isLoadingList = ref(false)
 const busqueda = ref('')
-const filtroCarrera = ref('')
+const filtroEstado = ref('')
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
 const editForm = ref({})
 const alumnoAEliminar = ref(null)
+const imagenesAniversario = [
+  'https://picsum.photos/seed/aniversario-1/500/320',
+  'https://picsum.photos/seed/aniversario-2/500/320',
+  'https://picsum.photos/seed/aniversario-3/500/320',
+  'https://picsum.photos/seed/aniversario-4/500/320',
+  'https://picsum.photos/seed/aniversario-5/500/320',
+  'https://picsum.photos/seed/aniversario-6/500/320'
+]
 
 // --- TOAST ---
 const toast = ref({ show: false, message: '', type: 'info' })
@@ -398,46 +388,46 @@ const alumnosFiltrados = computed(() => {
   if (busqueda.value) {
     const term = busqueda.value.toLowerCase()
     resultado = resultado.filter(a => 
-      a.nombre.toLowerCase().includes(term) || 
-      a.numero_control.includes(term)
+      a.nombre.toLowerCase().includes(term) ||
+      a.carrera.toLowerCase().includes(term) ||
+      getAnioRegistro(a.nombre).includes(term)
     )
   }
   
-  if (filtroCarrera.value) {
-    resultado = resultado.filter(a => a.carrera === filtroCarrera.value)
+  if (filtroEstado.value !== '') {
+    resultado = resultado.filter(a => String(a.estado) === filtroEstado.value)
   }
   
   return resultado
 })
 
 // --- VALIDACIONES DE ENTRADA ---
-function validarNombre() {
-  nombreAlumno.value = nombreAlumno.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ ]/g, '')
-}
-
-function validarControl() {
-  numeroControl.value = numeroControl.value.replace(/\D/g, '')
+function validarAnio() {
+  anioAniversario.value = anioAniversario.value.replace(/\D/g, '').slice(0, 4)
 }
 
 // --- GENERACIÓN DE REGISTRO ---
 async function generarRegistroYQR() {
-  if (!nombreAlumno.value || !numeroControl.value || !carreraAlumno.value) {
-    mostrarToast('Todos los campos del alumno son obligatorios', 'error')
+  if (!anioAniversario.value || anioAniversario.value.length !== 4) {
+    mostrarToast('El año de aniversario es obligatorio y debe tener 4 dígitos', 'error')
     estadoActual.value = 0
     return
   }
 
-  const regexLetras = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/
-  const regexNumeros = /^\d+$/
+  const anioNumero = Number(anioAniversario.value)
+  if (anioNumero < 1900 || anioNumero > 2100) {
+    mostrarToast('Ingresa un año válido', 'error')
+    return
+  }
 
-  if (!regexLetras.test(nombreAlumno.value)) {
-    mostrarToast('El nombre contiene caracteres no permitidos', 'error')
+  if (!descripcionAniversario.value.trim()) {
+    mostrarToast('La descripción es obligatoria', 'error')
     return
   }
-  if (!regexNumeros.test(numeroControl.value)) {
-    mostrarToast('El número de control debe ser numérico', 'error')
-    return
-  }
+
+  const nombreGenerado = `Aniversario ${anioAniversario.value}`
+  const numeroGenerado = `${anioAniversario.value}${String(Date.now()).slice(-4)}`
+  const carreraGenerada = descripcionAniversario.value.trim()
 
   isLoading.value = true
 
@@ -445,28 +435,28 @@ async function generarRegistroYQR() {
     // Guardar en backend
     if (backendConnected.value) {
       await alumnosAPI.create({
-        nombre: nombreAlumno.value,
-        numero_control: numeroControl.value,
-        carrera: carreraAlumno.value
+        nombre: nombreGenerado,
+        numero_control: numeroGenerado,
+        carrera: carreraGenerada
       })
       await cargarDatos()
     } else {
       // Modo local
       listaAlumnos.value.unshift({
         id: Date.now(),
-        nombre: nombreAlumno.value,
-        numero_control: numeroControl.value,
-        carrera: carreraAlumno.value,
+        nombre: nombreGenerado,
+        numero_control: numeroGenerado,
+        carrera: carreraGenerada,
         estado: 0
       })
     }
 
     // Generación del texto para el QR
-    const dataString = `ALUMNO: ${nombreAlumno.value}\nCONTROL: ${numeroControl.value}\nCARRERA: ${carreraAlumno.value}\nEVENTO: ${urlBaseQR.value}`
+    const dataString = `${urlBaseQR.value}/${anioAniversario.value}?descripcion=${encodeURIComponent(descripcionAniversario.value.trim())}`
     qrFinalValue.value = dataString
     estadoActual.value = 2
     
-    mostrarToast('Alumno registrado correctamente', 'success')
+    mostrarToast('Registro de aniversario generado correctamente', 'success')
   } catch (error) {
     mostrarToast(error.response?.data?.error || 'Error al registrar', 'error')
   } finally {
@@ -475,9 +465,8 @@ async function generarRegistroYQR() {
 }
 
 function limpiarFormulario() {
-  nombreAlumno.value = ''
-  numeroControl.value = ''
-  carreraAlumno.value = ''
+  anioAniversario.value = ''
+  descripcionAniversario.value = ''
   urlBaseQR.value = 'https://tec-tlaxiaco.mx/aniversario'
   qrFinalValue.value = 'https://tec-tlaxiaco.mx/aniversario'
   estadoActual.value = 0
@@ -547,11 +536,16 @@ function getEstadoText(estado) {
   return textos[estado] || 'Desconocido'
 }
 
+function getAnioRegistro(nombre) {
+  const match = String(nombre || '').match(/\b(19|20)\d{2}\b/)
+  return match ? match[0] : 'N/A'
+}
+
 function exportarCSV() {
-  const headers = ['Nombre', 'Número de Control', 'Carrera', 'Estado']
+  const headers = ['Registro', 'Año', 'Descripción', 'Estado']
   const rows = alumnosFiltrados.value.map(a => [
     a.nombre,
-    a.numero_control,
+    getAnioRegistro(a.nombre),
     a.carrera,
     getEstadoText(a.estado)
   ])
@@ -577,6 +571,7 @@ function exportarCSV() {
 /* PANELES */
 .panel { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
 .header-title h3 { margin: 0; color: #09124D; font-weight: 800; }
 .subtitle { margin: 4px 0 0; font-size: 13px; color: #64748b; }
 
@@ -611,13 +606,28 @@ input:focus, select:focus { border-color: #1B3573; background: white; box-shadow
 
 /* CUADRÍCULA */
 .right-column { display: flex; flex-direction: column; gap: 20px; }
-.qr-positioner { display: flex; justify-content: flex-end; }
+.qr-inline { width: auto; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .cell { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 15px; display: flex; flex-direction: column; justify-content: center; }
 .cell.empty { background: #f1f5f9; border: 1px dashed #cbd5e1; height: 90px; }
 .cell-name { font-weight: 800; font-size: 12px; color: #09124D; margin: 0; }
 .cell-sub { font-size: 10px; color: #64748b; margin-top: 4px; }
 .divider { border-top: 1px dashed #e2e8f0; padding-top: 20px; }
+
+.anniversary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.anniversary-cell {
+  background: #f1f5f9;
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  overflow: hidden;
+  height: 100px;
+}
+.anniversary-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 
 /* SECCIONES INFORMES Y CONFIG */
 .full-view { padding: 20px; flex: 1; }

@@ -26,7 +26,7 @@
   background: linear-gradient(90deg, var(--navy-900), var(--blue-600));
   color: var(--white);
 
-  border-radius: 0 0 0 20px; 
+  border-radius: 0 0 20px 0;
 }
 
 .left .h1{
@@ -52,7 +52,7 @@
   height: 125px;
   width: auto;
   object-fit: contain;
-  background: rgba(255,255,255,0.10);
+  background: #ffffff;
   border-radius: 14px;
   padding: 8px;
 }
