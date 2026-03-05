@@ -1,5 +1,6 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs';
 
 dotenv.config();
 
@@ -27,7 +28,132 @@ pool.on('error', (err) => {
 // ==================== FUNCIONES DE BASE DE DATOS ====================
 
 export const database = {
-  // ===== ANIVERSARIOS =====
+  // ============================================================
+  // USUARIOS Y AUTENTICACIÓN
+  // ============================================================
+  
+  /**
+   * Obtener usuario por username
+   */
+  async getUsuarioByUsername(username) {
+    const result = await pool.query(
+      'SELECT * FROM usuarios WHERE username = $1 AND activo = true',
+      [username]
+    );
+    return result.rows[0];
+  },
+
+  /**
+   * Obtener usuario por ID
+   */
+  async getUsuarioById(id) {
+    const result = await pool.query(
+      'SELECT id, username, nombre_completo, email, rol, activo, ultimo_acceso, fecha_creacion FROM usuarios WHERE id = $1',
+      [id]
+    );
+    return result.rows[0];
+  },
+
+  /**
+   * Obtener todos los usuarios (sin passwords)
+   */
+  async getAllUsuarios() {
+    const result = await pool.query(
+      'SELECT id, username, nombre_completo, email, rol, activo, ultimo_acceso, fecha_creacion FROM usuarios ORDER BY fecha_creacion DESC'
+    );
+    return result.rows;
+  },
+
+  /**
+   * Crear nuevo usuario
+   */
+  async createUsuario(data) {
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const result = await pool.query(
+      `INSERT INTO usuarios (username, password_hash, nombre_completo, email, rol, activo) 
+       VALUES ($1, $2, $3, $4, $5, true) 
+       RETURNING id, username, nombre_completo, email, rol, activo, fecha_creacion`,
+      [data.username, passwordHash, data.nombre_completo, data.email || null, data.rol || 'usuario']
+    );
+    return result.rows[0];
+  },
+
+  /**
+   * Actualizar usuario
+   */
+  async updateUsuario(id, data) {
+    let query = 'UPDATE usuarios SET ';
+    const params = [];
+    const updates = [];
+    let paramIndex = 1;
+
+    if (data.nombre_completo) {
+      updates.push(`nombre_completo = $${paramIndex++}`);
+      params.push(data.nombre_completo);
+    }
+    if (data.email !== undefined) {
+      updates.push(`email = $${paramIndex++}`);
+      params.push(data.email);
+    }
+    if (data.rol) {
+      updates.push(`rol = $${paramIndex++}`);
+      params.push(data.rol);
+    }
+    if (data.activo !== undefined) {
+      updates.push(`activo = $${paramIndex++}`);
+      params.push(data.activo);
+    }
+    if (data.password) {
+      const passwordHash = await bcrypt.hash(data.password, 10);
+      updates.push(`password_hash = $${paramIndex++}`);
+      params.push(passwordHash);
+    }
+
+    if (updates.length === 0) return null;
+
+    query += updates.join(', ') + ` WHERE id = $${paramIndex} RETURNING id, username, nombre_completo, email, rol, activo`;
+    params.push(id);
+
+    const result = await pool.query(query, params);
+    return result.rows[0];
+  },
+
+  /**
+   * Eliminar usuario
+   */
+  async deleteUsuario(id) {
+    const result = await pool.query('DELETE FROM usuarios WHERE id = $1 RETURNING id', [id]);
+    return result.rowCount > 0;
+  },
+
+  /**
+   * Verificar credenciales de usuario
+   */
+  async verificarCredenciales(username, password) {
+    const usuario = await this.getUsuarioByUsername(username);
+    if (!usuario) return null;
+
+    const passwordValido = await bcrypt.compare(password, usuario.password_hash);
+    if (!passwordValido) return null;
+
+    // Actualizar último acceso
+    await pool.query(
+      'UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id = $1',
+      [usuario.id]
+    );
+
+    return {
+      id: usuario.id,
+      username: usuario.username,
+      nombre_completo: usuario.nombre_completo,
+      email: usuario.email,
+      rol: usuario.rol
+    };
+  },
+
+  // ============================================================
+  // ANIVERSARIOS
+  // ============================================================
   async getAllAniversarios(filters = {}) {
     let query = 'SELECT * FROM aniversarios';
     const params = [];
@@ -120,35 +246,57 @@ export const database = {
     return result.rows;
   },
 
+  /**
+   * Crear imagen desde archivo subido
+   */
   async createImagen(data) {
     const result = await pool.query(
-      `INSERT INTO imagenes_aniversario (aniversario_id, url, orden, descripcion) 
-       VALUES ($1, $2, $3, $4) 
+      `INSERT INTO imagenes_aniversario 
+       (aniversario_id, nombre_archivo, nombre_original, ruta_archivo, tipo_mime, tamano_bytes, orden, descripcion, subido_por) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
        RETURNING *`,
-      [data.aniversario_id, data.url, data.orden || 0, data.descripcion || '']
+      [
+        data.aniversario_id, 
+        data.nombre_archivo, 
+        data.nombre_original || data.nombre_archivo,
+        data.ruta_archivo, 
+        data.tipo_mime || 'image/jpeg',
+        data.tamano_bytes || 0,
+        data.orden || 0, 
+        data.descripcion || '',
+        data.subido_por || null
+      ]
     );
     return result.rows[0];
   },
 
-  async createImagenesBulk(aniversarioId, urls) {
+  /**
+   * Crear múltiples imágenes desde archivos subidos
+   */
+  async createImagenesBulk(aniversarioId, archivos, usuarioId = null) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       
-      // Eliminar imágenes existentes
-      await client.query('DELETE FROM imagenes_aniversario WHERE aniversario_id = $1', [aniversarioId]);
-      
-      // Insertar nuevas imágenes
       const imagenes = [];
-      for (let i = 0; i < urls.length; i++) {
-        if (urls[i] && urls[i].trim()) {
-          const result = await client.query(
-            `INSERT INTO imagenes_aniversario (aniversario_id, url, orden) 
-             VALUES ($1, $2, $3) RETURNING *`,
-            [aniversarioId, urls[i].trim(), i]
-          );
-          imagenes.push(result.rows[0]);
-        }
+      for (let i = 0; i < archivos.length; i++) {
+        const archivo = archivos[i];
+        const result = await client.query(
+          `INSERT INTO imagenes_aniversario 
+           (aniversario_id, nombre_archivo, nombre_original, ruta_archivo, tipo_mime, tamano_bytes, orden, subido_por) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+          [
+            aniversarioId, 
+            archivo.nombre_archivo,
+            archivo.nombre_original,
+            archivo.ruta_archivo, 
+            archivo.tipo_mime,
+            archivo.tamano_bytes,
+            i,
+            usuarioId
+          ]
+        );
+        imagenes.push(result.rows[0]);
       }
       
       await client.query('COMMIT');
@@ -161,27 +309,38 @@ export const database = {
     }
   },
 
+  /**
+   * Obtener imagen por ID
+   */
+  async getImagenById(id) {
+    const result = await pool.query('SELECT * FROM imagenes_aniversario WHERE id = $1', [id]);
+    return result.rows[0];
+  },
+
   async updateImagen(id, data) {
     const result = await pool.query(
       `UPDATE imagenes_aniversario 
-       SET url = COALESCE($1, url), 
-           orden = COALESCE($2, orden),
-           descripcion = COALESCE($3, descripcion)
-       WHERE id = $4 
+       SET orden = COALESCE($1, orden),
+           descripcion = COALESCE($2, descripcion)
+       WHERE id = $3 
        RETURNING *`,
-      [data.url, data.orden, data.descripcion, id]
+      [data.orden, data.descripcion, id]
     );
     return result.rows[0];
   },
 
   async deleteImagen(id) {
-    const result = await pool.query('DELETE FROM imagenes_aniversario WHERE id = $1 RETURNING id', [id]);
-    return result.rowCount > 0;
+    // Primero obtenemos la imagen para poder eliminar el archivo
+    const imagen = await pool.query('SELECT * FROM imagenes_aniversario WHERE id = $1', [id]);
+    const result = await pool.query('DELETE FROM imagenes_aniversario WHERE id = $1 RETURNING *', [id]);
+    return result.rows[0]; // Retornamos la imagen eliminada para poder borrar el archivo
   },
 
   async deleteImagenesByAniversarioId(aniversarioId) {
+    // Obtenemos las imágenes antes de eliminarlas
+    const imagenes = await pool.query('SELECT * FROM imagenes_aniversario WHERE aniversario_id = $1', [aniversarioId]);
     await pool.query('DELETE FROM imagenes_aniversario WHERE aniversario_id = $1', [aniversarioId]);
-    return true;
+    return imagenes.rows; // Retornamos para poder eliminar los archivos
   },
 
   // ===== EVENTOS =====
@@ -213,6 +372,7 @@ export const database = {
     const totalAniversarios = await pool.query('SELECT COUNT(*) as total FROM aniversarios');
     const totalEventos = await pool.query('SELECT COUNT(*) as total FROM eventos');
     const totalImagenes = await pool.query('SELECT COUNT(*) as total FROM imagenes_aniversario');
+    const totalUsuarios = await pool.query('SELECT COUNT(*) as total FROM usuarios WHERE activo = true');
 
     const porAnio = await pool.query(
       'SELECT anio, COUNT(*) as cantidad FROM aniversarios GROUP BY anio ORDER BY anio DESC'
@@ -226,38 +386,188 @@ export const database = {
       totalAniversarios: parseInt(totalAniversarios.rows[0].total),
       totalEventos: parseInt(totalEventos.rows[0].total),
       totalImagenes: parseInt(totalImagenes.rows[0].total),
+      totalUsuarios: parseInt(totalUsuarios.rows[0].total),
       porAnio: porAnio.rows,
       porEstado: porEstado.rows.map(r => ({ estado: r.estado, cantidad: parseInt(r.cantidad) }))
     };
   },
 
   // ===== VALIDACIÓN =====
-  async getRegistrosValidacion() {
-    const aniversarios = await pool.query(`
+  async getRegistrosValidacion(filtros = {}) {
+    let query = `
       SELECT 
         'aniversario-' || id as id,
+        id as original_id,
         nombre,
         anio::TEXT as anio,
         descripcion,
         estado,
-        'aniversario' as tipo
+        'aniversario' as tipo,
+        fecha_registro,
+        fecha_actualizacion
       FROM aniversarios
-      ORDER BY anio DESC
+    `;
+    
+    const params = [];
+    const conditions = [];
+    let paramIndex = 1;
+
+    if (filtros.estado !== undefined && filtros.estado !== '') {
+      conditions.push(`estado = $${paramIndex}`);
+      params.push(parseInt(filtros.estado));
+      paramIndex++;
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += ' ORDER BY fecha_registro DESC';
+
+    const aniversarios = await pool.query(query, params);
+
+    // También obtener eventos con los mismos filtros
+    let queryEventos = `
+      SELECT 
+        'evento-' || id as id,
+        id as original_id,
+        nombre,
+        anio::TEXT as anio,
+        descripcion,
+        estado,
+        'evento' as tipo,
+        fecha_creacion as fecha_registro,
+        fecha_creacion as fecha_actualizacion
+      FROM eventos
+    `;
+
+    if (conditions.length > 0) {
+      queryEventos += ' WHERE ' + conditions.join(' AND ').replace('fecha_registro', 'fecha_creacion');
+    }
+    
+    queryEventos += ' ORDER BY fecha_creacion DESC';
+
+    const eventos = await pool.query(queryEventos, params);
+
+    return [...aniversarios.rows, ...eventos.rows];
+  },
+
+  /**
+   * Obtener registros pendientes de validación
+   */
+  async getRegistrosPendientes() {
+    const aniversarios = await pool.query(`
+      SELECT 
+        'aniversario-' || id as id,
+        id as original_id,
+        nombre,
+        anio::TEXT as anio,
+        descripcion,
+        estado,
+        'aniversario' as tipo,
+        fecha_registro
+      FROM aniversarios
+      WHERE estado IN (0, 1)
+      ORDER BY fecha_registro DESC
     `);
 
     const eventos = await pool.query(`
       SELECT 
         'evento-' || id as id,
+        id as original_id,
         nombre,
         anio::TEXT as anio,
         descripcion,
         estado,
-        'evento' as tipo
+        'evento' as tipo,
+        fecha_creacion as fecha_registro
       FROM eventos
-      ORDER BY anio DESC
+      WHERE estado IN (0, 1)
+      ORDER BY fecha_creacion DESC
     `);
 
     return [...aniversarios.rows, ...eventos.rows];
+  },
+
+  /**
+   * Validar un registro (cambiar estado) con logging
+   */
+  async validarRegistro(tipo, id, nuevoEstado, usuarioId, comentario = null) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      const tabla = tipo === 'aniversario' ? 'aniversarios' : 'eventos';
+      const numericId = id.includes('-') ? id.split('-')[1] : id;
+      
+      // Obtener estado anterior
+      const actual = await client.query(`SELECT estado FROM ${tabla} WHERE id = $1`, [numericId]);
+      if (actual.rows.length === 0) {
+        throw new Error('Registro no encontrado');
+      }
+      const estadoAnterior = actual.rows[0].estado;
+      
+      // Actualizar estado
+      let updateQuery = `UPDATE ${tabla} SET estado = $1`;
+      const updateParams = [nuevoEstado];
+      
+      if (tipo === 'aniversario' && nuevoEstado === 2) {
+        updateQuery += ', validado_por = $2, fecha_validacion = CURRENT_TIMESTAMP WHERE id = $3';
+        updateParams.push(usuarioId, numericId);
+      } else {
+        updateQuery += ' WHERE id = $2';
+        updateParams.push(numericId);
+      }
+      
+      updateQuery += ' RETURNING *';
+      const resultado = await client.query(updateQuery, updateParams);
+      
+      // Registrar en log
+      await client.query(
+        `INSERT INTO log_validaciones (tipo, registro_id, estado_anterior, estado_nuevo, validado_por, comentario)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [tipo, numericId, estadoAnterior, nuevoEstado, usuarioId, comentario]
+      );
+      
+      await client.query('COMMIT');
+      return resultado.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
+  /**
+   * Obtener historial de validaciones
+   */
+  async getHistorialValidaciones(tipo = null, registroId = null) {
+    let query = `
+      SELECT lv.*, u.nombre_completo as validador_nombre
+      FROM log_validaciones lv
+      LEFT JOIN usuarios u ON lv.validado_por = u.id
+    `;
+    const params = [];
+    const conditions = [];
+    let paramIndex = 1;
+
+    if (tipo) {
+      conditions.push(`lv.tipo = $${paramIndex++}`);
+      params.push(tipo);
+    }
+    if (registroId) {
+      conditions.push(`lv.registro_id = $${paramIndex++}`);
+      params.push(registroId);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    query += ' ORDER BY lv.fecha_validacion DESC';
+
+    const result = await pool.query(query, params);
+    return result.rows;
   },
 
   async updateEstadoRegistro(tipo, id, estado) {

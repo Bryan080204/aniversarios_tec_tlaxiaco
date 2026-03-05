@@ -1,24 +1,189 @@
+/**
+ * =======================================================
+ * API Sistema de Aniversarios - TEC Tlaxiaco
+ * =======================================================
+ * Backend Node.js con Express
+ * Documentación disponible en /api/docs
+ * 
+ * ENDPOINTS PRINCIPALES:
+ * - /api/auth/*         - Autenticación y sesiones
+ * - /api/usuarios/*     - Gestión de usuarios (admin)
+ * - /api/aniversarios/* - CRUD de aniversarios
+ * - /api/imagenes/*     - Gestión de imágenes
+ * - /api/validacion/*   - Validación de registros
+ * - /api/estadisticas   - Reportes y métricas
+ * =======================================================
+ */
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import swaggerUi from 'swagger-ui-express';
+
 import { database } from './database.js';
+import { swaggerSpec } from './config/swagger.js';
+import { verificarToken, tokenOpcional, soloAdmin, generarToken } from './middleware/auth.js';
+import { uploadAniversarios, obtenerRutaPublica, eliminarArchivo, handleMulterError } from './config/multer.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
+// ==================== MIDDLEWARE ====================
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Servir archivos estáticos de uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ==================== DOCUMENTACIÓN SWAGGER ====================
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'API Aniversarios TEC - Documentación'
+}));
+
+app.get('/api/docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
+// ==================== RUTAS DE AUTENTICACIÓN ====================
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Usuario y contraseña son requeridos' });
+    }
+
+    const usuario = await database.verificarCredenciales(username, password);
+    if (!usuario) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const token = generarToken(usuario);
+
+    res.json({
+      success: true,
+      token,
+      usuario: {
+        id: usuario.id,
+        username: usuario.username,
+        nombre_completo: usuario.nombre_completo,
+        email: usuario.email,
+        rol: usuario.rol
+      }
+    });
+  } catch (error) {
+    console.error('Error en login:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+app.get('/api/auth/me', verificarToken, async (req, res) => {
+  try {
+    const usuario = await database.getUsuarioById(req.usuario.id);
+    if (!usuario) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    res.json(usuario);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/logout', verificarToken, (req, res) => {
+  res.json({ message: 'Sesión cerrada correctamente' });
+});
+
+// ==================== RUTAS DE USUARIOS (SOLO ADMIN) ====================
+
+app.get('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const usuarios = await database.getAllUsuarios();
+    res.json(usuarios);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const { username, password, nombre_completo, email, rol } = req.body;
+
+    if (!username || !password || !nombre_completo) {
+      return res.status(400).json({ error: 'Username, password y nombre completo son requeridos' });
+    }
+
+    const existente = await database.getUsuarioByUsername(username);
+    if (existente) {
+      return res.status(400).json({ error: 'El nombre de usuario ya existe' });
+    }
+
+    const usuario = await database.createUsuario({
+      username,
+      password,
+      nombre_completo,
+      email,
+      rol: rol || 'usuario'
+    });
+
+    res.status(201).json(usuario);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const usuario = await database.updateUsuario(req.params.id, req.body);
+    if (!usuario) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    res.json(usuario);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    if (parseInt(req.params.id) === req.usuario.id) {
+      return res.status(400).json({ error: 'No puede eliminar su propio usuario' });
+    }
+
+    const deleted = await database.deleteUsuario(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    res.json({ message: 'Usuario eliminado correctamente' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ==================== RUTAS DE ANIVERSARIOS ====================
 
 // Obtener todos los aniversarios
-app.get('/api/aniversarios', async (req, res) => {
+app.get('/api/aniversarios', tokenOpcional, async (req, res) => {
   try {
     const { buscar, anio, estado } = req.query;
-    const aniversarios = await database.getAllAniversarios({ buscar, anio, estado });
+    let filtros = { buscar, anio, estado };
+    
+    // Si es usuario regular (no admin), solo mostrar validados
+    if (!req.usuario || req.usuario.rol !== 'admin') {
+      filtros.estado = 2;
+    }
+    
+    const aniversarios = await database.getAllAniversarios(filtros);
     res.json(aniversarios);
   } catch (error) {
     console.error('Error in GET /api/aniversarios:', error);
@@ -53,12 +218,12 @@ app.get('/api/aniversarios/anio/:anio', async (req, res) => {
 });
 
 // Crear nuevo aniversario
-app.post('/api/aniversarios', async (req, res) => {
+app.post('/api/aniversarios', verificarToken, soloAdmin, async (req, res) => {
   try {
-    const { nombre, anio, descripcion, imagenes } = req.body;
+    const { nombre, anio, descripcion } = req.body;
 
-    if (!nombre || !anio) {
-      return res.status(400).json({ error: 'Nombre y año son obligatorios' });
+    if (!anio) {
+      return res.status(400).json({ error: 'El año es obligatorio' });
     }
 
     // Verificar si el año ya existe
@@ -67,12 +232,12 @@ app.post('/api/aniversarios', async (req, res) => {
       return res.status(400).json({ error: 'Ya existe un registro para ese año' });
     }
 
-    const nuevoAniversario = await database.createAniversario({ nombre, anio, descripcion });
-    
-    // Si se enviaron imágenes, guardarlas
-    if (imagenes && Array.isArray(imagenes) && imagenes.length > 0) {
-      await database.createImagenesBulk(nuevoAniversario.id, imagenes);
-    }
+    const nombreGenerado = nombre || `Aniversario ${anio}`;
+    const nuevoAniversario = await database.createAniversario({ 
+      nombre: nombreGenerado, 
+      anio, 
+      descripcion 
+    });
 
     res.status(201).json(nuevoAniversario);
   } catch (error) {
@@ -81,9 +246,9 @@ app.post('/api/aniversarios', async (req, res) => {
 });
 
 // Actualizar aniversario
-app.put('/api/aniversarios/:id', async (req, res) => {
+app.put('/api/aniversarios/:id', verificarToken, soloAdmin, async (req, res) => {
   try {
-    const { nombre, anio, descripcion, estado, imagenes } = req.body;
+    const { nombre, anio, descripcion, estado } = req.body;
     const { id } = req.params;
 
     const aniversario = await database.getAniversarioById(id);
@@ -98,11 +263,6 @@ app.put('/api/aniversarios/:id', async (req, res) => {
       estado: estado !== undefined ? estado : aniversario.estado
     });
 
-    // Si se enviaron imágenes, actualizarlas
-    if (imagenes && Array.isArray(imagenes)) {
-      await database.createImagenesBulk(id, imagenes);
-    }
-
     res.json(actualizado);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -110,8 +270,16 @@ app.put('/api/aniversarios/:id', async (req, res) => {
 });
 
 // Eliminar aniversario
-app.delete('/api/aniversarios/:id', async (req, res) => {
+app.delete('/api/aniversarios/:id', verificarToken, soloAdmin, async (req, res) => {
   try {
+    // Primero eliminar imágenes asociadas (archivos)
+    const imagenes = await database.deleteImagenesByAniversarioId(req.params.id);
+    for (const img of imagenes) {
+      if (img.ruta_archivo) {
+        await eliminarArchivo(img.ruta_archivo);
+      }
+    }
+    
     const deleted = await database.deleteAniversario(req.params.id);
     if (!deleted) {
       return res.status(404).json({ error: 'Aniversario no encontrado' });
@@ -144,36 +312,55 @@ app.get('/api/aniversarios/:id/imagenes', async (req, res) => {
   }
 });
 
-// Agregar imagen a un aniversario
-app.post('/api/aniversarios/:id/imagenes', async (req, res) => {
-  try {
-    const { url, orden, descripcion } = req.body;
-    const { id } = req.params;
+// Subir imágenes a un aniversario (archivos)
+app.post('/api/aniversarios/:id/imagenes', 
+  verificarToken, 
+  soloAdmin,
+  uploadAniversarios.array('imagenes', 6),
+  handleMulterError,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
 
-    if (!url) {
-      return res.status(400).json({ error: 'La URL de la imagen es obligatoria' });
+      const aniversario = await database.getAniversarioById(id);
+      if (!aniversario) {
+        // Eliminar archivos ya subidos
+        if (req.files) {
+          for (const file of req.files) {
+            await eliminarArchivo(file.path);
+          }
+        }
+        return res.status(404).json({ error: 'Aniversario no encontrado' });
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No se recibieron archivos' });
+      }
+
+      // Preparar datos de las imágenes
+      const archivos = req.files.map(file => ({
+        nombre_archivo: file.filename,
+        nombre_original: file.originalname,
+        ruta_archivo: obtenerRutaPublica(file.path),
+        tipo_mime: file.mimetype,
+        tamano_bytes: file.size
+      }));
+
+      const imagenes = await database.createImagenesBulk(id, archivos, req.usuario.id);
+
+      res.status(201).json({
+        message: `${imagenes.length} imagen(es) subida(s) correctamente`,
+        imagenes
+      });
+    } catch (error) {
+      console.error('Error al subir imágenes:', error);
+      res.status(500).json({ error: error.message });
     }
-
-    const aniversario = await database.getAniversarioById(id);
-    if (!aniversario) {
-      return res.status(404).json({ error: 'Aniversario no encontrado' });
-    }
-
-    const imagen = await database.createImagen({
-      aniversario_id: id,
-      url,
-      orden,
-      descripcion
-    });
-
-    res.status(201).json(imagen);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
-});
+);
 
-// Actualizar múltiples imágenes de un aniversario
-app.put('/api/aniversarios/:id/imagenes', async (req, res) => {
+// Actualizar múltiples imágenes de un aniversario (legacy - para URLs)
+app.put('/api/aniversarios/:id/imagenes', verificarToken, soloAdmin, async (req, res) => {
   try {
     const { urls } = req.body;
     const { id } = req.params;
@@ -187,7 +374,16 @@ app.put('/api/aniversarios/:id/imagenes', async (req, res) => {
       return res.status(404).json({ error: 'Aniversario no encontrado' });
     }
 
-    const imagenes = await database.createImagenesBulk(id, urls);
+    // Para compatibilidad, convertimos URLs a formato de archivo
+    const archivos = urls.filter(url => url && url.trim()).map((url, index) => ({
+      nombre_archivo: `url-${Date.now()}-${index}`,
+      nombre_original: url,
+      ruta_archivo: url.trim(),
+      tipo_mime: 'image/external',
+      tamano_bytes: 0
+    }));
+
+    const imagenes = await database.createImagenesBulk(id, archivos);
     res.json(imagenes);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -195,10 +391,10 @@ app.put('/api/aniversarios/:id/imagenes', async (req, res) => {
 });
 
 // Actualizar una imagen específica
-app.put('/api/imagenes/:id', async (req, res) => {
+app.put('/api/imagenes/:id', verificarToken, soloAdmin, async (req, res) => {
   try {
-    const { url, orden, descripcion } = req.body;
-    const imagen = await database.updateImagen(req.params.id, { url, orden, descripcion });
+    const { orden, descripcion } = req.body;
+    const imagen = await database.updateImagen(req.params.id, { orden, descripcion });
     if (!imagen) {
       return res.status(404).json({ error: 'Imagen no encontrada' });
     }
@@ -209,12 +405,18 @@ app.put('/api/imagenes/:id', async (req, res) => {
 });
 
 // Eliminar una imagen
-app.delete('/api/imagenes/:id', async (req, res) => {
+app.delete('/api/imagenes/:id', verificarToken, soloAdmin, async (req, res) => {
   try {
-    const deleted = await database.deleteImagen(req.params.id);
-    if (!deleted) {
+    const imagen = await database.deleteImagen(req.params.id);
+    if (!imagen) {
       return res.status(404).json({ error: 'Imagen no encontrada' });
     }
+    
+    // Eliminar archivo físico si no es una URL externa
+    if (imagen.ruta_archivo && imagen.ruta_archivo.startsWith('/uploads')) {
+      await eliminarArchivo(imagen.ruta_archivo);
+    }
+    
     res.json({ message: 'Imagen eliminada correctamente' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -234,7 +436,7 @@ app.get('/api/eventos', async (req, res) => {
 });
 
 // Crear evento
-app.post('/api/eventos', async (req, res) => {
+app.post('/api/eventos', verificarToken, soloAdmin, async (req, res) => {
   try {
     const { nombre, descripcion, anio } = req.body;
 
@@ -250,7 +452,7 @@ app.post('/api/eventos', async (req, res) => {
 });
 
 // Actualizar estado de evento
-app.put('/api/eventos/:id/estado', async (req, res) => {
+app.put('/api/eventos/:id/estado', verificarToken, soloAdmin, async (req, res) => {
   try {
     const { estado } = req.body;
     const { id } = req.params;
@@ -260,6 +462,81 @@ app.put('/api/eventos/:id/estado', async (req, res) => {
       return res.status(404).json({ error: 'Evento no encontrado' });
     }
     res.json(evento);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==================== RUTAS DE VALIDACIÓN ====================
+
+// Obtener registros para validación
+app.get('/api/validacion/registros', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const { estado } = req.query;
+    const registros = await database.getRegistrosValidacion({ estado });
+    res.json(registros);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Obtener solo registros pendientes
+app.get('/api/validacion/pendientes', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const registros = await database.getRegistrosPendientes();
+    res.json(registros);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Validar un registro con historial
+app.put('/api/validacion/:tipo/:id', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const { tipo, id } = req.params;
+    const { estado, comentario } = req.body;
+
+    if (estado === undefined) {
+      return res.status(400).json({ error: 'El estado es requerido' });
+    }
+
+    const resultado = await database.validarRegistro(tipo, id, estado, req.usuario.id, comentario);
+    
+    res.json({ 
+      message: 'Registro validado correctamente', 
+      data: resultado 
+    });
+  } catch (error) {
+    if (error.message === 'Registro no encontrado') {
+      return res.status(404).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Actualizar estado de registro (legacy)
+app.put('/api/validacion/:tipo/:id/estado', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const { tipo, id } = req.params;
+    const { estado } = req.body;
+
+    const resultado = await database.updateEstadoRegistro(tipo, id, estado);
+    if (!resultado) {
+      return res.status(404).json({ error: 'Registro no encontrado' });
+    }
+
+    res.json({ message: 'Estado actualizado correctamente', data: resultado });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Obtener historial de validaciones
+app.get('/api/validacion/historial', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const { tipo, registro_id } = req.query;
+    const historial = await database.getHistorialValidaciones(tipo, registro_id);
+    res.json(historial);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -279,17 +556,52 @@ app.get('/api/estadisticas', async (req, res) => {
 
 // ==================== VALIDACIÓN ====================
 
-app.get('/api/validacion/registros', async (req, res) => {
+app.get('/api/validacion/registros', verificarToken, soloAdmin, async (req, res) => {
   try {
-    const registros = await database.getRegistrosValidacion();
+    const { estado } = req.query;
+    const registros = await database.getRegistrosValidacion({ estado });
     res.json(registros);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Actualizar estado de registro
-app.put('/api/validacion/:tipo/:id/estado', async (req, res) => {
+// Obtener registros pendientes de validación
+app.get('/api/validacion/pendientes', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const registros = await database.getRegistrosPendientes();
+    res.json(registros);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Validar un registro con historial
+app.put('/api/validacion/:tipo/:id', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const { tipo, id } = req.params;
+    const { estado, comentario } = req.body;
+
+    if (estado === undefined) {
+      return res.status(400).json({ error: 'El estado es requerido' });
+    }
+
+    const resultado = await database.validarRegistro(tipo, id, estado, req.usuario.id, comentario);
+    
+    res.json({ 
+      message: 'Registro validado correctamente', 
+      data: resultado 
+    });
+  } catch (error) {
+    if (error.message === 'Registro no encontrado') {
+      return res.status(404).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Actualizar estado de registro (legacy)
+app.put('/api/validacion/:tipo/:id/estado', verificarToken, soloAdmin, async (req, res) => {
   try {
     const { tipo, id } = req.params;
     const { estado } = req.body;
@@ -305,10 +617,21 @@ app.put('/api/validacion/:tipo/:id/estado', async (req, res) => {
   }
 });
 
+// Obtener historial de validaciones
+app.get('/api/validacion/historial', verificarToken, soloAdmin, async (req, res) => {
+  try {
+    const { tipo, registro_id } = req.query;
+    const historial = await database.getHistorialValidaciones(tipo, registro_id);
+    res.json(historial);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== ADMINISTRACIÓN ====================
 
 // Vaciar base de datos (requiere confirmación)
-app.delete('/api/admin/vaciar', async (req, res) => {
+app.delete('/api/admin/vaciar', verificarToken, soloAdmin, async (req, res) => {
   try {
     const { confirmacion } = req.body;
     
@@ -332,18 +655,37 @@ app.get('/api/health', async (req, res) => {
   res.json({
     status: 'ok',
     database: dbConnected ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    version: '2.0.0'
   });
+});
+
+// ==================== MANEJO DE ERRORES ====================
+
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'Endpoint no encontrado' });
+});
+
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: 'Error interno del servidor' });
 });
 
 // Iniciar servidor
 app.listen(PORT, async () => {
   const dbConnected = await database.testConnection();
   console.log(`
-  ╔════════════════════════════════════════════════════╗
-  ║   🎓 TEC Tlaxiaco - Backend API                   ║
-  ║   Servidor corriendo en http://localhost:${PORT}      ║
-  ║   Base de datos: ${dbConnected ? '✅ Conectada' : '❌ Desconectada'}              ║
-  ╚════════════════════════════════════════════════════╝
+  ╔════════════════════════════════════════════════════════════╗
+  ║   🎓 TEC Tlaxiaco - Backend API v2.0                       ║
+  ║   Servidor corriendo en http://localhost:${PORT}               ║
+  ║   Documentación: http://localhost:${PORT}/api/docs             ║
+  ║   Base de datos: ${dbConnected ? '✅ Conectada' : '❌ Desconectada'}                        ║
+  ╠════════════════════════════════════════════════════════════╣
+  ║   ROLES:                                                   ║
+  ║   • admin    - Acceso completo (usuario: admin)            ║
+  ║   • usuario  - Solo lectura de validados                   ║
+  ╚════════════════════════════════════════════════════════════╝
   `);
 });
+
+export default app;

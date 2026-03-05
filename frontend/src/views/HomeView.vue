@@ -27,8 +27,11 @@
                   Registra eventos, valida estados y genera códigos QR institucionales.
                 </p>
                 <div class="welcome-actions">
-                  <button class="btn btn-welcome" @click="handleMenuSelect('registro')">
+                  <button v-if="isAdmin" class="btn btn-welcome" @click="handleMenuSelect('registro')">
                     Ir al Registro ➜
+                  </button>
+                  <button v-else-if="!isAuthenticated" class="btn btn-welcome" @click="showLoginModal = true">
+                    Iniciar Sesión ➜
                   </button>
                   <div class="welcome-stats-mini">
                     <div class="mini-stat">
@@ -49,7 +52,8 @@
             </section>
           </transition>
 
-          <div class="content">
+          <!-- SOLO MOSTRAR FORMULARIO EN REGISTRO (NO EN INICIO) -->
+          <div v-if="active === 'registro'" class="content">
             <section class="panel registration-card">
               <div class="panel-header">
                 <div class="header-title">
@@ -110,10 +114,44 @@
                     />
                   </div>
                   <div class="field full-width">
-                    <span>URLs de imágenes</span>
-                    <p class="field-hint">Ingresa de 3 a 6 imágenes (una URL por campo).</p>
-                    <div class="images-url-grid">
-                      <input v-for="(_, index) in urlImagenesForm" :key="index" v-model="urlImagenesForm[index]" :placeholder="`Imagen ${index + 1}: https://...`" />
+                    <span>Imágenes del Aniversario</span>
+                    <p class="field-hint">Sube de 3 a 6 imágenes (arrastra o haz clic para seleccionar).</p>
+                    
+                    <!-- Zona de Drop / Selector de archivos -->
+                    <div 
+                      class="upload-dropzone"
+                      :class="{ 'dropzone-active': isDragging }"
+                      @dragover.prevent="isDragging = true"
+                      @dragleave.prevent="isDragging = false"
+                      @drop.prevent="handleFileDrop"
+                      @click="$refs.fileInput.click()"
+                    >
+                      <input 
+                        ref="fileInput"
+                        type="file" 
+                        accept="image/*" 
+                        multiple 
+                        @change="handleFileSelect"
+                        style="display: none;"
+                      />
+                      <div class="dropzone-content">
+                        <span class="dropzone-icon">📁</span>
+                        <span class="dropzone-text">Arrastra imágenes aquí o haz clic para seleccionar</span>
+                        <span class="dropzone-hint">JPG, PNG, WEBP (máx. 10MB cada una)</span>
+                      </div>
+                    </div>
+
+                    <!-- Preview de imágenes seleccionadas -->
+                    <div v-if="selectedFiles.length > 0" class="images-preview-grid">
+                      <div 
+                        v-for="(file, index) in selectedFiles" 
+                        :key="index" 
+                        class="preview-item"
+                      >
+                        <img :src="file.preview" :alt="`Imagen ${index + 1}`" />
+                        <button class="preview-remove" @click.stop="removeSelectedFile(index)">✕</button>
+                        <span class="preview-name">{{ file.name }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -129,39 +167,43 @@
             </section>
 
             <div class="right-column">
-              <section class="panel lowerRight carousel-panel">
+              <section class="panel lowerRight gallery-panel">
                 <div class="panel-header-inline">
                   <h3>Últimos Registros</h3>
-                  <div v-if="carouselYear" class="carousel-year-badge">Año: {{ carouselYear }}</div>
+                  <div v-if="ultimosRegistros.length > 0" class="gallery-count-badge">
+                    {{ ultimosRegistros.length }} registro(s)
+                  </div>
                 </div>
                 
-                <div class="carousel-container">
-                  <div v-if="carouselImages.length > 0" class="carousel-viewport">
-                    <transition name="slide">
-                      <img 
-                        :src="carouselImages[currentCarouselIndex]" 
-                        :key="currentCarouselIndex"
-                        class="carousel-image"
-                        @click="abrirImagen(carouselImages[currentCarouselIndex])"
-                      />
-                    </transition>
-                    <div class="carousel-controls" v-if="carouselImages.length > 1">
-                      <button @click="prevCarousel" class="carousel-btn">‹</button>
-                      <button @click="nextCarousel" class="carousel-btn">›</button>
+                <!-- GALERÍA DE IMÁGENES (sin carrusel) -->
+                <div class="gallery-grid">
+                  <template v-if="galeriaImagenes.length > 0">
+                    <div 
+                      v-for="(img, i) in galeriaImagenes" 
+                      :key="i" 
+                      class="gallery-item"
+                      @click="abrirImagen(img.url)"
+                    >
+                      <img :src="img.url" :alt="`Aniversario ${img.anio}`" />
+                      <div class="gallery-item-overlay">
+                        <span class="gallery-year">{{ img.anio }}</span>
+                        <div v-if="isAdmin" class="gallery-actions">
+                          <button @click.stop="editarImagenGaleria(img)" title="Editar">✏️</button>
+                          <button @click.stop="eliminarImagenGaleria(img)" title="Eliminar">🗑️</button>
+                        </div>
+                      </div>
                     </div>
-                    <div class="carousel-indicators">
-                      <span 
-                        v-for="(_, i) in carouselImages" 
-                        :key="i" 
-                        class="indicator"
-                        :class="{ active: i === currentCarouselIndex }"
-                        @click="currentCarouselIndex = i"
-                      ></span>
-                    </div>
-                  </div>
-                  <div v-else class="empty-carousel">
+                  </template>
+                  <div v-else class="empty-gallery-message">
                     <div class="empty-image-slot">No hay imágenes registradas</div>
                   </div>
+                </div>
+
+                <!-- Botón para agregar imagen si es admin -->
+                <div v-if="isAdmin && ultimosRegistros.length > 0" class="gallery-footer">
+                  <button class="btn btn-outline btn-sm" @click="abrirModalSubirImagen">
+                    + Agregar Imagen
+                  </button>
                 </div>
               </section>
             </div>
@@ -370,14 +412,113 @@
     <ModalDialog :show="showGalleryModal" :title="galleryTitle" size="large" @close="showGalleryModal = false">
       <div v-if="galleryImages.length > 0" class="gallery-container">
         <div v-for="(img, idx) in galleryImages" :key="idx" class="gallery-item">
-          <img :src="img" :alt="`Foto ${idx + 1}`" @click="abrirImagen(img)" />
+          <img :src="img.url || img" :alt="`Foto ${idx + 1}`" @click="abrirImagen(img.url || img)" />
+          <div v-if="isAdmin" class="gallery-item-actions">
+            <button @click.stop="editarImagenGaleriaModal(img, idx)" class="action-mini">✏️</button>
+            <button @click.stop="eliminarImagenGaleriaModal(img)" class="action-mini delete">🗑️</button>
+          </div>
         </div>
       </div>
       <div v-else class="empty-gallery">
         <p>No hay imágenes disponibles para este registro.</p>
       </div>
       <template #footer>
+        <button v-if="isAdmin" class="btn btn-outline" @click="abrirModalSubirImagenGaleria">+ Agregar Imagen</button>
         <button class="btn btn-primary" @click="showGalleryModal = false">Cerrar</button>
+      </template>
+    </ModalDialog>
+
+    <!-- MODAL LOGIN MEJORADO -->
+    <div v-if="showLoginModal" class="login-overlay" @click.self="showLoginModal = false">
+      <div class="login-modal">
+        <button class="login-close" @click="showLoginModal = false">✕</button>
+        
+        <div class="login-content">
+          <div class="login-brand">
+            <img src="/logo-itt.png" alt="Logo TEC" class="login-logo" />
+            <h2>Bienvenido</h2>
+            <p>Sistema de Aniversarios TEC Tlaxiaco</p>
+          </div>
+          
+          <form class="login-form" @submit.prevent="handleLogin">
+            <div class="login-field">
+              <label for="username">👤 Usuario</label>
+              <input 
+                id="username"
+                v-model="loginForm.username" 
+                placeholder="Ingresa tu usuario"
+                autocomplete="username"
+              />
+            </div>
+            
+            <div class="login-field">
+              <label for="password">🔒 Contraseña</label>
+              <input 
+                id="password"
+                v-model="loginForm.password" 
+                type="password" 
+                placeholder="Ingresa tu contraseña"
+                autocomplete="current-password"
+              />
+            </div>
+            
+            <p v-if="loginError" class="login-error">{{ loginError }}</p>
+            
+            <button type="submit" class="login-submit" :disabled="isLoggingIn">
+              <span v-if="isLoggingIn" class="login-spinner"></span>
+              <span v-else>Iniciar Sesión</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL SUBIR IMAGEN A GALERÍA -->
+    <ModalDialog :show="showUploadGalleryModal" title="Subir Imagen" size="medium" @close="showUploadGalleryModal = false">
+      <div class="modal-form">
+        <div class="field">
+          <span>Seleccionar aniversario</span>
+          <select v-model="uploadGalleryAniversarioId">
+            <option value="">-- Selecciona un aniversario --</option>
+            <option v-for="aniv in ultimosRegistros" :key="aniv.id" :value="aniv.id">
+              {{ aniv.nombre }} ({{ aniv.anio }})
+            </option>
+          </select>
+        </div>
+        <div class="field">
+          <span>Imágenes</span>
+          <div 
+            class="upload-dropzone-mini"
+            @dragover.prevent="isDraggingGallery = true"
+            @dragleave.prevent="isDraggingGallery = false"
+            @drop.prevent="handleGalleryFileDrop"
+            @click="$refs.galleryFileInput.click()"
+            :class="{ 'dropzone-active': isDraggingGallery }"
+          >
+            <input 
+              ref="galleryFileInput"
+              type="file" 
+              accept="image/*" 
+              multiple 
+              @change="handleGalleryFileSelect"
+              style="display: none;"
+            />
+            <span>📁 Arrastra o haz clic para seleccionar</span>
+          </div>
+          <div v-if="gallerySelectedFiles.length > 0" class="mini-preview-list">
+            <div v-for="(file, i) in gallerySelectedFiles" :key="i" class="mini-preview">
+              <img :src="file.preview" />
+              <button @click="gallerySelectedFiles.splice(i, 1)">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn btn-outline" @click="showUploadGalleryModal = false">Cancelar</button>
+        <button class="btn btn-primary" @click="subirImagenesGaleria" :disabled="isUploadingGallery">
+          <LoadingSpinner v-if="isUploadingGallery" size="small" />
+          <span v-else>Subir Imágenes</span>
+        </button>
       </template>
     </ModalDialog>
 
@@ -385,7 +526,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SidebarMenu from '../components/SidebarMenu.vue'
 import AppHeader from '../components/AppHeader.vue'
@@ -395,19 +536,36 @@ import ToastNotification from '../components/ToastNotification.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import SearchBar from '../components/SearchBar.vue'
 import ModalDialog from '../components/ModalDialog.vue'
-import { aniversariosAPI, imagenesAPI, estadisticasAPI, adminAPI } from '../services/api.js'
+import { aniversariosAPI, imagenesAPI, estadisticasAPI, adminAPI, authAPI } from '../services/api.js'
 
 const route = useRoute()
 const router = useRouter()
 const active = ref(route.meta.section || 'inicio')
 
+// --- AUTENTICACIÓN ---
+const isAuthenticated = ref(authAPI.isAuthenticated())
+const isAdmin = ref(authAPI.isAdmin())
+const currentUser = ref(authAPI.getUsuario())
+const showLoginModal = ref(false)
+const loginForm = ref({ username: '', password: '' })
+const loginError = ref('')
+const isLoggingIn = ref(false)
+
 // --- ESTADO GLOBAL ---
 const anioAniversario = ref('')
 const descripcionAniversario = ref('')
-const urlImagenesForm = ref(['', '', '', '', '', ''])
+const selectedFiles = ref([]) // Archivos seleccionados para subir
+const isDragging = ref(false)
 const urlBaseQR = ref('https://tec-tlaxiaco.mx/aniversario')
 const qrFinalValue = ref('https://tec-tlaxiaco.mx/aniversario')
 const estadoActual = ref(0)
+
+// --- Variables para galería modal de subida ---
+const showUploadGalleryModal = ref(false)
+const uploadGalleryAniversarioId = ref(null)
+const gallerySelectedFiles = ref([])
+const isDraggingGallery = ref(false)
+const isUploadingGallery = ref(false)
 const listaAniversarios = ref([])
 const estadisticas = ref({})
 const backendConnected = ref(false)
@@ -468,6 +626,226 @@ function mostrarToast(message, type = 'info') {
   toast.value = { show: true, message, type }
 }
 
+// --- FUNCIONES DE AUTENTICACIÓN ---
+async function handleLogin() {
+  if (!loginForm.value.username || !loginForm.value.password) {
+    loginError.value = 'Ingresa usuario y contraseña'
+    return
+  }
+  
+  isLoggingIn.value = true
+  loginError.value = ''
+  
+  try {
+    const response = await authAPI.login(loginForm.value.username, loginForm.value.password)
+    authAPI.setToken(response.data.token, response.data.usuario)
+    isAuthenticated.value = true
+    isAdmin.value = response.data.usuario.rol === 'admin'
+    currentUser.value = response.data.usuario
+    showLoginModal.value = false
+    loginForm.value = { username: '', password: '' }
+    mostrarToast(`Bienvenido, ${response.data.usuario.nombre}`, 'success')
+    await cargarDatos()
+  } catch (error) {
+    loginError.value = error.response?.data?.error || 'Error al iniciar sesión'
+  } finally {
+    isLoggingIn.value = false
+  }
+}
+
+function handleLogout() {
+  authAPI.logout()
+  isAuthenticated.value = false
+  isAdmin.value = false
+  currentUser.value = null
+  mostrarToast('Sesión cerrada', 'info')
+}
+
+// --- FUNCIONES DE MANEJO DE ARCHIVOS (REGISTRO) ---
+function handleFileDrop(event) {
+  event.preventDefault()
+  isDragging.value = false
+  
+  const files = Array.from(event.dataTransfer.files)
+  const imageFiles = files.filter(file => file.type.startsWith('image/'))
+  
+  if (imageFiles.length === 0) {
+    mostrarToast('Solo se permiten archivos de imagen', 'error')
+    return
+  }
+  
+  const totalFiles = selectedFiles.value.length + imageFiles.length
+  if (totalFiles > 6) {
+    mostrarToast('Máximo 6 imágenes permitidas', 'error')
+    return
+  }
+  
+  imageFiles.forEach(file => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      selectedFiles.value.push({
+        file,
+        preview: e.target.result,
+        name: file.name
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+function handleFileSelect(event) {
+  const files = Array.from(event.target.files)
+  const imageFiles = files.filter(file => file.type.startsWith('image/'))
+  
+  if (imageFiles.length === 0) {
+    mostrarToast('Solo se permiten archivos de imagen', 'error')
+    return
+  }
+  
+  const totalFiles = selectedFiles.value.length + imageFiles.length
+  if (totalFiles > 6) {
+    mostrarToast('Máximo 6 imágenes permitidas', 'error')
+    return
+  }
+  
+  imageFiles.forEach(file => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      selectedFiles.value.push({
+        file,
+        preview: e.target.result,
+        name: file.name
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+  
+  // Limpiar el input para permitir seleccionar el mismo archivo
+  event.target.value = ''
+}
+
+function removeSelectedFile(index) {
+  selectedFiles.value.splice(index, 1)
+}
+
+function handleDragOver(event) {
+  event.preventDefault()
+  isDragging.value = true
+}
+
+function handleDragLeave() {
+  isDragging.value = false
+}
+
+// --- FUNCIONES DE GALERÍA (SUBIDA MODAL) ---
+function abrirModalSubirImagen(aniversarioId) {
+  uploadGalleryAniversarioId.value = aniversarioId
+  gallerySelectedFiles.value = []
+  showUploadGalleryModal.value = true
+}
+
+function handleGalleryFileDrop(event) {
+  event.preventDefault()
+  isDraggingGallery.value = false
+  
+  const files = Array.from(event.dataTransfer.files)
+  const imageFiles = files.filter(file => file.type.startsWith('image/'))
+  
+  if (imageFiles.length === 0) {
+    mostrarToast('Solo se permiten archivos de imagen', 'error')
+    return
+  }
+  
+  const totalFiles = gallerySelectedFiles.value.length + imageFiles.length
+  if (totalFiles > 6) {
+    mostrarToast('Máximo 6 imágenes permitidas', 'error')
+    return
+  }
+  
+  imageFiles.forEach(file => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      gallerySelectedFiles.value.push({
+        file,
+        preview: e.target.result,
+        name: file.name
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+function handleGalleryFileSelect(event) {
+  const files = Array.from(event.target.files)
+  const imageFiles = files.filter(file => file.type.startsWith('image/'))
+  
+  if (imageFiles.length === 0) {
+    mostrarToast('Solo se permiten archivos de imagen', 'error')
+    return
+  }
+  
+  const totalFiles = gallerySelectedFiles.value.length + imageFiles.length
+  if (totalFiles > 6) {
+    mostrarToast('Máximo 6 imágenes permitidas', 'error')
+    return
+  }
+  
+  imageFiles.forEach(file => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      gallerySelectedFiles.value.push({
+        file,
+        preview: e.target.result,
+        name: file.name
+      })
+    }
+    reader.readAsDataURL(file)
+  })
+  
+  event.target.value = ''
+}
+
+function removeGalleryFile(index) {
+  gallerySelectedFiles.value.splice(index, 1)
+}
+
+async function subirImagenesGaleria() {
+  if (gallerySelectedFiles.value.length === 0) {
+    mostrarToast('Selecciona al menos una imagen', 'error')
+    return
+  }
+  
+  isUploadingGallery.value = true
+  
+  try {
+    const files = gallerySelectedFiles.value.map(f => f.file)
+    await imagenesAPI.upload(uploadGalleryAniversarioId.value, files)
+    
+    showUploadGalleryModal.value = false
+    gallerySelectedFiles.value = []
+    mostrarToast('Imágenes subidas correctamente', 'success')
+    await cargarDatos()
+    await cargarImagenesGlobal()
+  } catch (error) {
+    mostrarToast(error.response?.data?.error || 'Error al subir imágenes', 'error')
+  } finally {
+    isUploadingGallery.value = false
+  }
+}
+
+async function eliminarImagenGaleria(imagenId) {
+  if (!confirm('¿Estás seguro de eliminar esta imagen?')) return
+  
+  try {
+    await imagenesAPI.delete(imagenId)
+    mostrarToast('Imagen eliminada correctamente', 'success')
+    await cargarImagenesGlobal()
+    await cargarDatos()
+  } catch (error) {
+    mostrarToast('Error al eliminar la imagen', 'error')
+  }
+}
+
 // --- ROUTER SYNC ---
 onMounted(() => {
   if (route.meta.section) {
@@ -496,6 +874,15 @@ async function cargarImagenesGlobal() {
 watch(backendConnected, (val) => {
   if (val) cargarImagenesGlobal()
 })
+
+// Observar cambios en la ruta completa para actualizar la sección activa
+watch(() => route.path, () => {
+  if (route.meta.section) {
+    active.value = route.meta.section
+  } else if (route.path === '/') {
+    active.value = 'inicio'
+  }
+}, { immediate: true })
 
 watch(() => route.meta.section, (newSection) => {
   if (newSection) active.value = newSection
@@ -648,16 +1035,15 @@ async function generarRegistroYQR() {
     return
   }
 
-  const urlsCapturadas = urlImagenesForm.value.map(url => url.trim()).filter(Boolean)
-
-  if (urlsCapturadas.length < 3 || urlsCapturadas.length > 6) {
-    mostrarToast('Debes ingresar entre 3 y 6 URLs de imágenes', 'error')
+  // Validar archivos seleccionados en lugar de URLs
+  if (selectedFiles.value.length < 3 || selectedFiles.value.length > 6) {
+    mostrarToast('Debes seleccionar entre 3 y 6 imágenes', 'error')
     return
   }
 
   const yaExisteAnio = listaAniversarios.value.some(a => String(a.anio) === anioAniversario.value)
   if (yaExisteAnio) {
-    mostrarToast('Solo se permite una imagen por año. Ese año ya está registrado.', 'error')
+    mostrarToast('Ese año ya está registrado.', 'error')
     return
   }
 
@@ -666,17 +1052,23 @@ async function generarRegistroYQR() {
   isLoading.value = true
 
   try {
-    // Guardar en backend
     if (backendConnected.value) {
-      await aniversariosAPI.create({
+      // Primero crear el aniversario
+      const response = await aniversariosAPI.create({
         nombre: nombreGenerado,
         anio: parseInt(anioAniversario.value),
-        descripcion: descripcionAniversario.value.trim(),
-        imagenes: urlsCapturadas
+        descripcion: descripcionAniversario.value.trim()
       })
+      
+      // Luego subir las imágenes
+      const aniversarioId = response.data.id
+      const files = selectedFiles.value.map(f => f.file)
+      await imagenesAPI.upload(aniversarioId, files)
+      
       await cargarDatos()
+      await cargarImagenesGlobal()
     } else {
-      // Modo local
+      // Modo local (demo)
       listaAniversarios.value.unshift({
         id: Date.now(),
         nombre: nombreGenerado,
@@ -689,7 +1081,6 @@ async function generarRegistroYQR() {
     // Generación del texto para el QR
     const dataString = `${urlBaseQR.value}/${anioAniversario.value}?descripcion=${encodeURIComponent(descripcionAniversario.value.trim())}`
     qrFinalValue.value = dataString
-    aplicarUrlsImagenesDesdeFormulario(anioAniversario.value)
     estadoActual.value = 2
     
     mostrarToast('Registro de aniversario generado correctamente', 'success')
@@ -704,7 +1095,7 @@ async function generarRegistroYQR() {
 function limpiarFormulario() {
   anioAniversario.value = ''
   descripcionAniversario.value = ''
-  urlImagenesForm.value = ['', '', '', '', '', '']
+  selectedFiles.value = []
   urlBaseQR.value = 'https://tec-tlaxiaco.mx/aniversario'
   qrFinalValue.value = 'https://tec-tlaxiaco.mx/aniversario'
   estadoActual.value = 0
@@ -832,20 +1223,6 @@ function toggleMenu(index) {
 
 function cerrarMenuImagen() {
   activeImageMenu.value = null
-}
-
-function aplicarUrlsImagenesDesdeFormulario(anio) {
-  const urls = urlImagenesForm.value.map(url => url.trim()).filter(Boolean)
-
-  if (urls.length === 0) return
-
-  imagenesPorAnio.value[anio] = urls
-
-  const base = Array(6).fill('')
-  urls.slice(0, 6).forEach((url, index) => {
-    base[index] = url
-  })
-  imagenesAniversario.value = base
 }
 
 // --- CARRUSEL DINÁMICO ---
@@ -1519,5 +1896,486 @@ input:focus, select:focus { border-color: #1B3573; background: white; box-shadow
 .fade-slide-enter-from {
   opacity: 0;
   transform: translateY(20px);
+}
+
+/* ========== MODAL DE LOGIN MEJORADO ========== */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.login-modal {
+  background: white;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 380px;
+  position: relative;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: loginSlideIn 0.3s ease-out;
+}
+
+@keyframes loginSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  color: #64748b;
+  transition: 0.2s;
+  z-index: 10;
+}
+
+.login-close:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.login-content {
+  padding: 32px 28px;
+}
+
+.login-brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.login-brand .login-logo {
+  width: 70px;
+  height: 70px;
+  object-fit: contain;
+  margin-bottom: 12px;
+}
+
+.login-brand h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.login-brand p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.login-field input {
+  padding: 12px 14px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 14px;
+  outline: none;
+  transition: 0.2s;
+  background: #f8fafc;
+}
+
+.login-field input:focus {
+  border-color: #1B3573;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(27, 53, 115, 0.1);
+}
+
+.login-error {
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  margin: 0;
+}
+
+.login-submit {
+  background: linear-gradient(135deg, #1B3573 0%, #09124D 100%);
+  color: white;
+  border: none;
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.login-submit:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(27, 53, 115, 0.3);
+}
+
+.login-submit:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.login-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.login-hint {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed #e2e8f0;
+  text-align: center;
+}
+
+.login-hint p {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.login-hint code {
+  font-size: 12px;
+  background: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: #475569;
+}
+
+/* Responsive para móviles */
+@media (max-width: 480px) {
+  .login-modal {
+    max-width: 100%;
+    margin: 0 8px;
+    border-radius: 16px;
+  }
+  
+  .login-content {
+    padding: 24px 20px;
+  }
+  
+  .login-brand .login-logo {
+    width: 60px;
+    height: 60px;
+  }
+  
+  .login-brand h2 {
+    font-size: 1.3rem;
+  }
+}
+
+/* ========== ESTILOS DE USUARIO AUTENTICADO ========== */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-badge {
+  background: #f0f7ff;
+  color: #1b3573;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.btn-logout {
+  background: #ef4444;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.btn-logout:hover {
+  background: #dc2626;
+}
+
+/* ========== ESTILOS DE UPLOAD ========== */
+.upload-section {
+  margin-top: 10px;
+}
+
+.upload-dropzone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 30px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: #f8fafc;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.dragging {
+  border-color: #1b3573;
+  background: #f0f7ff;
+}
+
+.upload-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.upload-text {
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 4px;
+}
+
+.upload-hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.upload-input {
+  display: none;
+}
+
+/* Vista previa de archivos seleccionados */
+.selected-files {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.file-preview {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 4/3;
+  background: #f1f5f9;
+}
+
+.file-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.file-preview .remove-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  background: rgba(239, 68, 68, 0.9);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: 0.2s;
+}
+
+.file-preview .remove-btn:hover {
+  background: #dc2626;
+  transform: scale(1.1);
+}
+
+.file-preview .file-name {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 4px 8px;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ========== ESTILOS DE GALERÍA ========== */
+.gallery-section {
+  margin-top: 20px;
+}
+
+.gallery-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.gallery-header h4 {
+  margin: 0;
+  color: #09124D;
+  font-weight: 700;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.gallery-item {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 4/3;
+  background: #f1f5f9;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.gallery-item:hover {
+  transform: scale(1.03);
+}
+
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gallery-item .gallery-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  opacity: 0;
+  transition: 0.3s;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 10px;
+  gap: 8px;
+}
+
+.gallery-item:hover .gallery-overlay {
+  opacity: 1;
+}
+
+.gallery-overlay button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.gallery-overlay .btn-view {
+  background: white;
+  color: #334155;
+}
+
+.gallery-overlay .btn-delete {
+  background: #ef4444;
+  color: white;
+}
+
+.gallery-overlay button:hover {
+  transform: scale(1.05);
+}
+
+.gallery-year-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(27, 53, 115, 0.9);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.empty-gallery {
+  grid-column: span 3;
+  text-align: center;
+  padding: 40px 20px;
+  color: #94a3b8;
+}
+
+.empty-gallery-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+/* ========== MODAL DE GALERÍA DE SUBIDA ========== */
+.gallery-upload-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gallery-upload-preview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 768px) {
+  .selected-files,
+  .gallery-grid,
+  .gallery-upload-preview {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .empty-gallery {
+    grid-column: span 2;
+  }
 }
 </style>
