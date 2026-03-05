@@ -9,13 +9,24 @@ const api = axios.create({
   }
 });
 
-// ==================== ALUMNOS ====================
-export const alumnosAPI = {
-  getAll: (params = {}) => api.get('/alumnos', { params }),
-  getById: (id) => api.get(`/alumnos/${id}`),
-  create: (data) => api.post('/alumnos', data),
-  update: (id, data) => api.put(`/alumnos/${id}`, data),
-  delete: (id) => api.delete(`/alumnos/${id}`)
+// ==================== ANIVERSARIOS ====================
+export const aniversariosAPI = {
+  getAll: (params = {}) => api.get('/aniversarios', { params }),
+  getById: (id) => api.get(`/aniversarios/${id}`),
+  getByAnio: (anio) => api.get(`/aniversarios/anio/${anio}`),
+  create: (data) => api.post('/aniversarios', data),
+  update: (id, data) => api.put(`/aniversarios/${id}`, data),
+  delete: (id) => api.delete(`/aniversarios/${id}`)
+};
+
+// ==================== IMÁGENES ====================
+export const imagenesAPI = {
+  getAll: () => api.get('/imagenes'),
+  getByAniversario: (aniversarioId) => api.get(`/aniversarios/${aniversarioId}/imagenes`),
+  create: (aniversarioId, data) => api.post(`/aniversarios/${aniversarioId}/imagenes`, data),
+  updateBulk: (aniversarioId, urls) => api.put(`/aniversarios/${aniversarioId}/imagenes`, { urls }),
+  update: (id, data) => api.put(`/imagenes/${id}`, data),
+  delete: (id) => api.delete(`/imagenes/${id}`)
 };
 
 // ==================== EVENTOS ====================
@@ -34,6 +45,12 @@ export const estadisticasAPI = {
 export const validacionAPI = {
   getRegistros: () => api.get('/validacion/registros'),
   updateEstado: (tipo, id, estado) => api.put(`/validacion/${tipo}/${id}/estado`, { estado })
+};
+
+// ==================== ADMINISTRACIÓN ====================
+export const adminAPI = {
+  vaciarBD: () => api.delete('/admin/vaciar', { data: { confirmacion: 'CONFIRMAR_VACIAR_BD' } }),
+  healthCheck: () => api.get('/health')
 };
 
 export default api;

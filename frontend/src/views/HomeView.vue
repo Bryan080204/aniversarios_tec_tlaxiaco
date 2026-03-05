@@ -171,7 +171,7 @@
               
               <div class="stats-row">
                 <div class="stat-box">
-                  <span class="number">{{ estadisticas.totalAlumnos || listaAlumnos.length }}</span>
+                  <span class="number">{{ estadisticas.totalAniversarios || listaAniversarios.length }}</span>
                   <span class="label">Total de Registros</span>
                 </div>
               </div>
@@ -204,21 +204,21 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="alumno in alumnosFiltrados" :key="alumno.id || alumno.numero_control">
-                      <td>{{ alumno.nombre }}</td>
-                      <td><code>{{ getAnioRegistro(alumno.nombre) }}</code></td>
-                      <td>{{ alumno.carrera }}</td>
+                    <tr v-for="aniversario in aniversariosFiltrados" :key="aniversario.id">
+                      <td>{{ aniversario.nombre }}</td>
+                      <td><code>{{ aniversario.anio }}</code></td>
+                      <td>{{ aniversario.descripcion }}</td>
                       <td>
-                        <span class="badge" :class="getBadgeClass(alumno.estado)">
-                          {{ getEstadoText(alumno.estado) }}
+                        <span class="badge" :class="getBadgeClass(aniversario.estado)">
+                          {{ getEstadoText(aniversario.estado) }}
                         </span>
                       </td>
                       <td class="text-center actions-cell">
-                        <button class="action-btn edit" @click="editarAlumno(alumno)" title="Editar">✏️</button>
-                        <button class="action-btn delete" @click="confirmarEliminar(alumno)" title="Eliminar">🗑️</button>
+                        <button class="action-btn edit" @click="editarAniversario(aniversario)" title="Editar">✏️</button>
+                        <button class="action-btn delete" @click="confirmarEliminar(aniversario)" title="Eliminar">🗑️</button>
                       </td>
                     </tr>
-                    <tr v-if="alumnosFiltrados.length === 0">
+                    <tr v-if="aniversariosFiltrados.length === 0">
                       <td colspan="5" class="empty-msg">
                         {{ busqueda || filtroEstado ? 'No se encontraron resultados' : 'No hay registros de aniversario.' }}
                       </td>
@@ -313,11 +313,11 @@
 
     <!-- MODAL CONFIRMAR ELIMINAR -->
     <ModalDialog :show="showDeleteModal" title="Confirmar Eliminación" size="small" @close="showDeleteModal = false">
-      <p>¿Estás seguro de que deseas eliminar a <strong>{{ alumnoAEliminar?.nombre }}</strong>?</p>
+      <p>¿Estás seguro de que deseas eliminar <strong>{{ aniversarioAEliminar?.nombre }}</strong>?</p>
       <p class="warning-text">Esta acción no se puede deshacer.</p>
       <template #footer>
         <button class="btn btn-outline" @click="showDeleteModal = false">Cancelar</button>
-        <button class="btn btn-primary red-bg" @click="eliminarAlumno">Eliminar</button>
+        <button class="btn btn-primary red-bg" @click="eliminarAniversario">Eliminar</button>
       </template>
     </ModalDialog>
 
@@ -360,7 +360,7 @@ import ToastNotification from '../components/ToastNotification.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import SearchBar from '../components/SearchBar.vue'
 import ModalDialog from '../components/ModalDialog.vue'
-import { alumnosAPI, estadisticasAPI } from '../services/api.js'
+import { aniversariosAPI, imagenesAPI, estadisticasAPI, adminAPI } from '../services/api.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -373,7 +373,7 @@ const urlImagenesForm = ref(['', '', '', '', '', ''])
 const urlBaseQR = ref('https://tec-tlaxiaco.mx/aniversario')
 const qrFinalValue = ref('https://tec-tlaxiaco.mx/aniversario')
 const estadoActual = ref(0)
-const listaAlumnos = ref([])
+const listaAniversarios = ref([])
 const estadisticas = ref({})
 const backendConnected = ref(false)
 
@@ -386,7 +386,7 @@ const showEditModal = ref(false)
 const showDeleteModal = ref(false)
 const showImageEditorModal = ref(false)
 const editForm = ref({})
-const alumnoAEliminar = ref(null)
+const aniversarioAEliminar = ref(null)
 const activeImageMenu = ref(null)
 const previewImageUrl = ref('')
 const showYearMenu = ref(false)
@@ -464,11 +464,11 @@ function handleMenuSelect(section) {
 async function cargarDatos() {
   isLoadingList.value = true
   try {
-    const [alumnosRes, statsRes] = await Promise.all([
-      alumnosAPI.getAll(),
+    const [aniversariosRes, statsRes] = await Promise.all([
+      aniversariosAPI.getAll(),
       estadisticasAPI.get()
     ])
-    listaAlumnos.value = alumnosRes.data
+    listaAniversarios.value = aniversariosRes.data
     estadisticas.value = statsRes.data
     backendConnected.value = true
   } catch (error) {
@@ -481,11 +481,12 @@ async function cargarDatos() {
 }
 
 function cargarDatosDemo() {
-  listaAlumnos.value = [...demoRegistros]
+  listaAniversarios.value = [...demoRegistros]
   estadisticas.value = {
-    totalAlumnos: demoRegistros.length,
+    totalAniversarios: demoRegistros.length,
     totalEventos: 0,
-    porCarrera: [],
+    totalImagenes: 0,
+    porAnio: [],
     porEstado: [
       { estado: 0, cantidad: demoRegistros.filter(item => item.estado === 0).length },
       { estado: 1, cantidad: demoRegistros.filter(item => item.estado === 1).length },
@@ -514,9 +515,9 @@ const statusColorClass = computed(() => {
 
 const inicioCounts = computed(() => {
   return {
-    pendiente: listaAlumnos.value.filter(r => r.estado === 0).length,
-    proceso: listaAlumnos.value.filter(r => r.estado === 1).length,
-    validado: listaAlumnos.value.filter(r => r.estado === 2).length,
+    pendiente: listaAniversarios.value.filter(r => r.estado === 0).length,
+    proceso: listaAniversarios.value.filter(r => r.estado === 1).length,
+    validado: listaAniversarios.value.filter(r => r.estado === 2).length,
   }
 })
 
@@ -531,15 +532,15 @@ const filteredYearOptions = computed(() => {
 })
 
 // --- FILTROS ---
-const alumnosFiltrados = computed(() => {
-  let resultado = listaAlumnos.value
+const aniversariosFiltrados = computed(() => {
+  let resultado = listaAniversarios.value
   
   if (busqueda.value) {
     const term = busqueda.value.toLowerCase()
     resultado = resultado.filter(a => 
       a.nombre.toLowerCase().includes(term) ||
-      a.carrera.toLowerCase().includes(term) ||
-      getAnioRegistro(a.nombre).includes(term)
+      (a.descripcion && a.descripcion.toLowerCase().includes(term)) ||
+      String(a.anio).includes(term)
     )
   }
   
@@ -598,34 +599,33 @@ async function generarRegistroYQR() {
     return
   }
 
-  const yaExisteAnio = listaAlumnos.value.some(a => getAnioRegistro(a.nombre) === anioAniversario.value)
+  const yaExisteAnio = listaAniversarios.value.some(a => String(a.anio) === anioAniversario.value)
   if (yaExisteAnio) {
     mostrarToast('Solo se permite una imagen por año. Ese año ya está registrado.', 'error')
     return
   }
 
   const nombreGenerado = `Aniversario ${anioAniversario.value}`
-  const numeroGenerado = `${anioAniversario.value}${String(Date.now()).slice(-4)}`
-  const carreraGenerada = descripcionAniversario.value.trim()
 
   isLoading.value = true
 
   try {
     // Guardar en backend
     if (backendConnected.value) {
-      await alumnosAPI.create({
+      await aniversariosAPI.create({
         nombre: nombreGenerado,
-        numero_control: numeroGenerado,
-        carrera: carreraGenerada
+        anio: parseInt(anioAniversario.value),
+        descripcion: descripcionAniversario.value.trim(),
+        imagenes: urlsCapturadas
       })
       await cargarDatos()
     } else {
       // Modo local
-      listaAlumnos.value.unshift({
+      listaAniversarios.value.unshift({
         id: Date.now(),
         nombre: nombreGenerado,
-        numero_control: numeroGenerado,
-        carrera: carreraGenerada,
+        anio: parseInt(anioAniversario.value),
+        descripcion: descripcionAniversario.value.trim(),
         estado: 0
       })
     }
@@ -655,15 +655,13 @@ function limpiarFormulario() {
 }
 
 // --- EDITAR / ELIMINAR ---
-function editarAlumno(alumno) {
-  const anio = getAnioRegistro(alumno.nombre)
+function editarAniversario(aniversario) {
   editForm.value = {
-    id: alumno.id,
-    numero_control: alumno.numero_control,
-    estado: alumno.estado,
-    anio,
-    descripcion: alumno.carrera,
-    imagenUrl: imagenesPorAnio.value[anio] || ''
+    id: aniversario.id,
+    estado: aniversario.estado,
+    anio: aniversario.anio,
+    descripcion: aniversario.descripcion,
+    imagenUrl: imagenesPorAnio.value[aniversario.anio] || ''
   }
   showEditModal.value = true
 }
@@ -681,19 +679,19 @@ async function guardarEdicion() {
 
   const payload = {
     nombre: `Aniversario ${editForm.value.anio}`,
-    numero_control: editForm.value.numero_control,
-    carrera: editForm.value.descripcion,
+    anio: parseInt(editForm.value.anio),
+    descripcion: editForm.value.descripcion,
     estado: editForm.value.estado,
   }
 
   try {
     if (backendConnected.value) {
-      await alumnosAPI.update(editForm.value.id, payload)
+      await aniversariosAPI.update(editForm.value.id, payload)
       await cargarDatos()
     } else {
-      const index = listaAlumnos.value.findIndex(a => a.id === editForm.value.id)
+      const index = listaAniversarios.value.findIndex(a => a.id === editForm.value.id)
       if (index !== -1) {
-        listaAlumnos.value[index] = { ...listaAlumnos.value[index], ...payload }
+        listaAniversarios.value[index] = { ...listaAniversarios.value[index], ...payload }
       }
     }
 
@@ -709,21 +707,21 @@ async function guardarEdicion() {
   }
 }
 
-function confirmarEliminar(alumno) {
-  alumnoAEliminar.value = alumno
+function confirmarEliminar(aniversario) {
+  aniversarioAEliminar.value = aniversario
   showDeleteModal.value = true
 }
 
-async function eliminarAlumno() {
+async function eliminarAniversario() {
   try {
     if (backendConnected.value) {
-      await alumnosAPI.delete(alumnoAEliminar.value.id)
+      await aniversariosAPI.delete(aniversarioAEliminar.value.id)
       await cargarDatos()
     } else {
-      listaAlumnos.value = listaAlumnos.value.filter(a => a.id !== alumnoAEliminar.value.id)
+      listaAniversarios.value = listaAniversarios.value.filter(a => a.id !== aniversarioAEliminar.value.id)
     }
     showDeleteModal.value = false
-    mostrarToast('Alumno eliminado correctamente', 'success')
+    mostrarToast('Aniversario eliminado correctamente', 'success')
   } catch (error) {
     mostrarToast('Error al eliminar', 'error')
   }
@@ -731,8 +729,17 @@ async function eliminarAlumno() {
 
 async function confirmarVaciar() {
   if (confirm('¿Estás seguro de vaciar TODA la base de datos?')) {
-    listaAlumnos.value = []
-    mostrarToast('Base de datos vaciada', 'warning')
+    try {
+      if (backendConnected.value) {
+        await adminAPI.vaciarBD()
+        await cargarDatos()
+      } else {
+        listaAniversarios.value = []
+      }
+      mostrarToast('Base de datos vaciada', 'warning')
+    } catch (error) {
+      mostrarToast('Error al vaciar la base de datos', 'error')
+    }
   }
 }
 
@@ -823,10 +830,10 @@ function guardarImagenEditor() {
 
 function exportarCSV() {
   const headers = ['Registro', 'Año', 'Descripción', 'Estado']
-  const rows = alumnosFiltrados.value.map(a => [
+  const rows = aniversariosFiltrados.value.map(a => [
     a.nombre,
-    getAnioRegistro(a.nombre),
-    a.carrera,
+    a.anio,
+    a.descripcion,
     getEstadoText(a.estado)
   ])
   
@@ -834,7 +841,7 @@ function exportarCSV() {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
   const link = document.createElement('a')
   link.href = URL.createObjectURL(blob)
-  link.download = `alumnos_tec_tlaxiaco_${new Date().toISOString().split('T')[0]}.csv`
+  link.download = `aniversarios_tec_tlaxiaco_${new Date().toISOString().split('T')[0]}.csv`
   link.click()
   
   mostrarToast('Archivo CSV descargado', 'success')

@@ -27,71 +27,161 @@ pool.on('error', (err) => {
 // ==================== FUNCIONES DE BASE DE DATOS ====================
 
 export const database = {
-  // ===== ALUMNOS =====
-  async getAllAlumnos(filters = {}) {
-    let query = 'SELECT * FROM alumnos';
+  // ===== ANIVERSARIOS =====
+  async getAllAniversarios(filters = {}) {
+    let query = 'SELECT * FROM aniversarios';
     const params = [];
     const conditions = [];
     let paramIndex = 1;
 
     if (filters.buscar) {
-      conditions.push(`(LOWER(nombre) LIKE $${paramIndex} OR numero_control LIKE $${paramIndex + 1})`);
-      params.push(`%${filters.buscar.toLowerCase()}%`, `%${filters.buscar}%`);
+      conditions.push(`(LOWER(nombre) LIKE $${paramIndex} OR LOWER(descripcion) LIKE $${paramIndex + 1})`);
+      params.push(`%${filters.buscar.toLowerCase()}%`, `%${filters.buscar.toLowerCase()}%`);
       paramIndex += 2;
     }
 
-    if (filters.carrera) {
-      conditions.push(`carrera = $${paramIndex}`);
-      params.push(filters.carrera);
+    if (filters.anio) {
+      conditions.push(`anio = $${paramIndex}`);
+      params.push(parseInt(filters.anio));
+      paramIndex++;
+    }
+
+    if (filters.estado !== undefined && filters.estado !== '') {
+      conditions.push(`estado = $${paramIndex}`);
+      params.push(parseInt(filters.estado));
       paramIndex++;
     }
 
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    query += ' ORDER BY fecha_registro DESC';
+    query += ' ORDER BY anio DESC';
 
     const result = await pool.query(query, params);
     return result.rows;
   },
 
-  async getAlumnoById(id) {
-    const result = await pool.query('SELECT * FROM alumnos WHERE id = $1', [id]);
+  async getAniversarioById(id) {
+    const result = await pool.query('SELECT * FROM aniversarios WHERE id = $1', [id]);
     return result.rows[0];
   },
 
-  async getAlumnoByControl(numero_control) {
-    const result = await pool.query('SELECT * FROM alumnos WHERE numero_control = $1', [numero_control]);
+  async getAniversarioByAnio(anio) {
+    const result = await pool.query('SELECT * FROM aniversarios WHERE anio = $1', [anio]);
     return result.rows[0];
   },
 
-  async createAlumno(data) {
+  async createAniversario(data) {
     const result = await pool.query(
-      `INSERT INTO alumnos (nombre, numero_control, carrera, estado) 
+      `INSERT INTO aniversarios (nombre, anio, descripcion, estado) 
        VALUES ($1, $2, $3, 0) 
        RETURNING *`,
-      [data.nombre, data.numero_control, data.carrera]
+      [data.nombre, data.anio, data.descripcion || '']
     );
     return result.rows[0];
   },
 
-  async updateAlumno(id, data) {
+  async updateAniversario(id, data) {
     const result = await pool.query(
-      `UPDATE alumnos 
+      `UPDATE aniversarios 
        SET nombre = COALESCE($1, nombre), 
-           numero_control = COALESCE($2, numero_control), 
-           carrera = COALESCE($3, carrera), 
-           estado = COALESCE($4, estado)
+           anio = COALESCE($2, anio), 
+           descripcion = COALESCE($3, descripcion), 
+           estado = COALESCE($4, estado),
+           fecha_actualizacion = CURRENT_TIMESTAMP
        WHERE id = $5 
        RETURNING *`,
-      [data.nombre, data.numero_control, data.carrera, data.estado, id]
+      [data.nombre, data.anio, data.descripcion, data.estado, id]
     );
     return result.rows[0];
   },
 
-  async deleteAlumno(id) {
-    const result = await pool.query('DELETE FROM alumnos WHERE id = $1 RETURNING id', [id]);
+  async deleteAniversario(id) {
+    const result = await pool.query('DELETE FROM aniversarios WHERE id = $1 RETURNING id', [id]);
     return result.rowCount > 0;
+  },
+
+  // ===== IMÁGENES DE ANIVERSARIOS =====
+  async getImagenesByAniversarioId(aniversarioId) {
+    const result = await pool.query(
+      'SELECT * FROM imagenes_aniversario WHERE aniversario_id = $1 ORDER BY orden ASC',
+      [aniversarioId]
+    );
+    return result.rows;
+  },
+
+  async getAllImagenes() {
+    const result = await pool.query(`
+      SELECT i.*, a.nombre as aniversario_nombre, a.anio
+      FROM imagenes_aniversario i
+      JOIN aniversarios a ON i.aniversario_id = a.id
+      ORDER BY a.anio DESC, i.orden ASC
+    `);
+    return result.rows;
+  },
+
+  async createImagen(data) {
+    const result = await pool.query(
+      `INSERT INTO imagenes_aniversario (aniversario_id, url, orden, descripcion) 
+       VALUES ($1, $2, $3, $4) 
+       RETURNING *`,
+      [data.aniversario_id, data.url, data.orden || 0, data.descripcion || '']
+    );
+    return result.rows[0];
+  },
+
+  async createImagenesBulk(aniversarioId, urls) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Eliminar imágenes existentes
+      await client.query('DELETE FROM imagenes_aniversario WHERE aniversario_id = $1', [aniversarioId]);
+      
+      // Insertar nuevas imágenes
+      const imagenes = [];
+      for (let i = 0; i < urls.length; i++) {
+        if (urls[i] && urls[i].trim()) {
+          const result = await client.query(
+            `INSERT INTO imagenes_aniversario (aniversario_id, url, orden) 
+             VALUES ($1, $2, $3) RETURNING *`,
+            [aniversarioId, urls[i].trim(), i]
+          );
+          imagenes.push(result.rows[0]);
+        }
+      }
+      
+      await client.query('COMMIT');
+      return imagenes;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
+  async updateImagen(id, data) {
+    const result = await pool.query(
+      `UPDATE imagenes_aniversario 
+       SET url = COALESCE($1, url), 
+           orden = COALESCE($2, orden),
+           descripcion = COALESCE($3, descripcion)
+       WHERE id = $4 
+       RETURNING *`,
+      [data.url, data.orden, data.descripcion, id]
+    );
+    return result.rows[0];
+  },
+
+  async deleteImagen(id) {
+    const result = await pool.query('DELETE FROM imagenes_aniversario WHERE id = $1 RETURNING id', [id]);
+    return result.rowCount > 0;
+  },
+
+  async deleteImagenesByAniversarioId(aniversarioId) {
+    await pool.query('DELETE FROM imagenes_aniversario WHERE aniversario_id = $1', [aniversarioId]);
+    return true;
   },
 
   // ===== EVENTOS =====
@@ -102,10 +192,10 @@ export const database = {
 
   async createEvento(data) {
     const result = await pool.query(
-      `INSERT INTO eventos (nombre, descripcion, año, estado) 
+      `INSERT INTO eventos (nombre, descripcion, anio, estado) 
        VALUES ($1, $2, $3, 0) 
        RETURNING *`,
-      [data.nombre, data.descripcion || '', data.año]
+      [data.nombre, data.descripcion || '', data.anio]
     );
     return result.rows[0];
   },
@@ -120,55 +210,61 @@ export const database = {
 
   // ===== ESTADÍSTICAS =====
   async getEstadisticas() {
-    const totalAlumnos = await pool.query('SELECT COUNT(*) as total FROM alumnos');
+    const totalAniversarios = await pool.query('SELECT COUNT(*) as total FROM aniversarios');
     const totalEventos = await pool.query('SELECT COUNT(*) as total FROM eventos');
+    const totalImagenes = await pool.query('SELECT COUNT(*) as total FROM imagenes_aniversario');
 
-    const porCarrera = await pool.query(
-      'SELECT carrera, COUNT(*) as cantidad FROM alumnos GROUP BY carrera'
+    const porAnio = await pool.query(
+      'SELECT anio, COUNT(*) as cantidad FROM aniversarios GROUP BY anio ORDER BY anio DESC'
     );
 
     const porEstado = await pool.query(
-      'SELECT estado, COUNT(*) as cantidad FROM alumnos GROUP BY estado'
+      'SELECT estado, COUNT(*) as cantidad FROM aniversarios GROUP BY estado ORDER BY estado'
     );
 
     return {
-      totalAlumnos: parseInt(totalAlumnos.rows[0].total),
+      totalAniversarios: parseInt(totalAniversarios.rows[0].total),
       totalEventos: parseInt(totalEventos.rows[0].total),
-      porCarrera: porCarrera.rows,
+      totalImagenes: parseInt(totalImagenes.rows[0].total),
+      porAnio: porAnio.rows,
       porEstado: porEstado.rows.map(r => ({ estado: r.estado, cantidad: parseInt(r.cantidad) }))
     };
   },
 
   // ===== VALIDACIÓN =====
   async getRegistrosValidacion() {
-    const alumnos = await pool.query(`
+    const aniversarios = await pool.query(`
       SELECT 
-        'alumno-' || id as id,
+        'aniversario-' || id as id,
         nombre,
-        EXTRACT(YEAR FROM fecha_registro)::TEXT as año,
-        carrera as descripcion,
-        estado
-      FROM alumnos
+        anio::TEXT as anio,
+        descripcion,
+        estado,
+        'aniversario' as tipo
+      FROM aniversarios
+      ORDER BY anio DESC
     `);
 
     const eventos = await pool.query(`
       SELECT 
         'evento-' || id as id,
         nombre,
-        año::TEXT as año,
+        anio::TEXT as anio,
         descripcion,
-        estado
+        estado,
+        'evento' as tipo
       FROM eventos
+      ORDER BY anio DESC
     `);
 
-    return [...alumnos.rows, ...eventos.rows];
+    return [...aniversarios.rows, ...eventos.rows];
   },
 
   async updateEstadoRegistro(tipo, id, estado) {
     try {
-      const tabla = tipo === 'alumno' ? 'alumnos' : 'eventos';
-      // Extract numeric ID from composite ID (e.g., "alumno-5" -> 5)
-      const numericId = id.split('-')[1] || id;
+      const tabla = tipo === 'aniversario' ? 'aniversarios' : 'eventos';
+      // Extract numeric ID from composite ID (e.g., "aniversario-5" -> 5)
+      const numericId = id.includes('-') ? id.split('-')[1] : id;
       
       const result = await pool.query(
         `UPDATE ${tabla} SET estado = $1 WHERE id = $2 RETURNING *`,
@@ -178,6 +274,25 @@ export const database = {
     } catch (error) {
       console.error('Error updating status:', error);
       return null;
+    }
+  },
+
+  // ===== ADMIN =====
+  async vaciarBaseDeDatos() {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET search_path TO aniversario, public');
+      await client.query('TRUNCATE TABLE imagenes_aniversario RESTART IDENTITY CASCADE');
+      await client.query('TRUNCATE TABLE aniversarios RESTART IDENTITY CASCADE');
+      await client.query('TRUNCATE TABLE eventos RESTART IDENTITY CASCADE');
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
   },
 
