@@ -129,28 +129,38 @@
             </section>
 
             <div class="right-column">
-              <section class="panel lowerRight">
-                <h3>Últimos Registros</h3>
-                <div class="anniversary-grid">
-                  <div
-                    class="anniversary-cell"
-                    v-for="(imagen, index) in imagenesAniversario"
-                    :key="index"
-                    @mouseleave="cerrarMenuImagen"
-                  >
-                    <img
-                      v-if="imagen"
-                      :src="imagen"
-                      :alt="`Aniversario ${index + 1}`"
-                      @click="abrirImagen(imagen)"
-                    />
-                    <div v-else class="empty-image-slot">Sin imagen</div>
-                    <button class="image-menu-trigger" @click.stop="toggleMenu(index)">⋯</button>
-                    <div v-if="activeImageMenu === index" class="image-menu" @mouseleave="cerrarMenuImagen">
-                      <button @click.stop="eliminarImagen(index)">Eliminar</button>
-                      <button @click.stop="abrirEditorImagen(index, 'edit')">Editar</button>
-                      <button @click.stop="abrirEditorImagen(index, 'add')">Agregar</button>
+              <section class="panel lowerRight carousel-panel">
+                <div class="panel-header-inline">
+                  <h3>Últimos Registros</h3>
+                  <div v-if="carouselYear" class="carousel-year-badge">Año: {{ carouselYear }}</div>
+                </div>
+                
+                <div class="carousel-container">
+                  <div v-if="carouselImages.length > 0" class="carousel-viewport">
+                    <transition name="slide">
+                      <img 
+                        :src="carouselImages[currentCarouselIndex]" 
+                        :key="currentCarouselIndex"
+                        class="carousel-image"
+                        @click="abrirImagen(carouselImages[currentCarouselIndex])"
+                      />
+                    </transition>
+                    <div class="carousel-controls" v-if="carouselImages.length > 1">
+                      <button @click="prevCarousel" class="carousel-btn">‹</button>
+                      <button @click="nextCarousel" class="carousel-btn">›</button>
                     </div>
+                    <div class="carousel-indicators">
+                      <span 
+                        v-for="(_, i) in carouselImages" 
+                        :key="i" 
+                        class="indicator"
+                        :class="{ active: i === currentCarouselIndex }"
+                        @click="currentCarouselIndex = i"
+                      ></span>
+                    </div>
+                  </div>
+                  <div v-else class="empty-carousel">
+                    <div class="empty-image-slot">No hay imágenes registradas</div>
                   </div>
                 </div>
               </section>
@@ -200,6 +210,7 @@
                       <th>Año</th>
                       <th>Descripción</th>
                       <th>Estado</th>
+                      <th class="text-center">Imágenes</th>
                       <th class="text-center">Acciones</th>
                     </tr>
                   </thead>
@@ -213,9 +224,18 @@
                           {{ getEstadoText(aniversario.estado) }}
                         </span>
                       </td>
-                      <td class="text-center actions-cell">
-                        <button class="action-btn edit" @click="editarAniversario(aniversario)" title="Editar">✏️</button>
-                        <button class="action-btn delete" @click="confirmarEliminar(aniversario)" title="Eliminar">🗑️</button>
+                      <td class="text-center">
+                        <div class="cell-content-wrapper">
+                          <button class="btn-text-icon" @click="verImagenes(aniversario)">
+                            🖼️ Ver Fotos
+                          </button>
+                        </div>
+                      </td>
+                      <td class="text-center">
+                        <div class="cell-content-wrapper gap-sm">
+                          <button class="action-btn edit" @click="editarAniversario(aniversario)" title="Editar">✏️</button>
+                          <button class="action-btn delete" @click="confirmarEliminar(aniversario)" title="Eliminar">🗑️</button>
+                        </div>
                       </td>
                     </tr>
                     <tr v-if="aniversariosFiltrados.length === 0">
@@ -346,6 +366,21 @@
       </template>
     </ModalDialog>
 
+    <!-- MODAL GALERÍA -->
+    <ModalDialog :show="showGalleryModal" :title="galleryTitle" size="large" @close="showGalleryModal = false">
+      <div v-if="galleryImages.length > 0" class="gallery-container">
+        <div v-for="(img, idx) in galleryImages" :key="idx" class="gallery-item">
+          <img :src="img" :alt="`Foto ${idx + 1}`" @click="abrirImagen(img)" />
+        </div>
+      </div>
+      <div v-else class="empty-gallery">
+        <p>No hay imágenes disponibles para este registro.</p>
+      </div>
+      <template #footer>
+        <button class="btn btn-primary" @click="showGalleryModal = false">Cerrar</button>
+      </template>
+    </ModalDialog>
+
   </div>
 </template>
 
@@ -442,6 +477,26 @@ onMounted(() => {
   verificarConexion()
 })
 
+// Cargar imágenes de todos los aniversarios para el carrusel y galerías (modo fallback)
+async function cargarImagenesGlobal() {
+  if (!backendConnected.value) return
+  try {
+    const res = await imagenesAPI.getAll()
+    const mapa = {}
+    res.data.forEach(img => {
+      if (!mapa[img.anio]) mapa[img.anio] = []
+      mapa[img.anio].push(img.url)
+    })
+    imagenesPorAnio.value = mapa
+  } catch (error) {
+    console.warn('Error al cargar imágenes globales')
+  }
+}
+
+watch(backendConnected, (val) => {
+  if (val) cargarImagenesGlobal()
+})
+
 watch(() => route.meta.section, (newSection) => {
   if (newSection) active.value = newSection
 })
@@ -471,6 +526,7 @@ async function cargarDatos() {
     listaAniversarios.value = aniversariosRes.data
     estadisticas.value = statsRes.data
     backendConnected.value = true
+    cargarImagenesGlobal()
   } catch (error) {
     console.warn('Backend no disponible, usando modo local')
     backendConnected.value = false
@@ -783,13 +839,77 @@ function aplicarUrlsImagenesDesdeFormulario(anio) {
 
   if (urls.length === 0) return
 
-  imagenesPorAnio.value[anio] = urls[0]
+  imagenesPorAnio.value[anio] = urls
 
   const base = Array(6).fill('')
   urls.slice(0, 6).forEach((url, index) => {
     base[index] = url
   })
   imagenesAniversario.value = base
+}
+
+// --- CARRUSEL DINÁMICO ---
+const currentCarouselIndex = ref(0)
+const carouselData = computed(() => {
+  if (listaAniversarios.value.length === 0) return []
+  
+  // Tomamos los últimos 3 registros (o menos si hay pocos)
+  const ultimos = listaAniversarios.value.slice(0, 3)
+  const allImages = []
+  
+  ultimos.forEach(aniv => {
+    const images = imagenesPorAnio.value[aniv.anio] || []
+    images.forEach(url => {
+      allImages.push({ url, anio: aniv.anio })
+    })
+  })
+  
+  return allImages
+})
+
+const carouselImages = computed(() => carouselData.value.map(d => d.url))
+
+const carouselYear = computed(() => {
+  if (carouselData.value.length === 0) return ''
+  return carouselData.value[currentCarouselIndex.value]?.anio || ''
+})
+
+function nextCarousel() {
+  if (carouselImages.value.length <= 1) return
+  currentCarouselIndex.value = (currentCarouselIndex.value + 1) % carouselImages.value.length
+}
+
+function prevCarousel() {
+  if (carouselImages.value.length <= 1) return
+  currentCarouselIndex.value = (currentCarouselIndex.value - 1 + carouselImages.value.length) % carouselImages.value.length
+}
+
+let carouselInterval = null
+onMounted(() => {
+  carouselInterval = setInterval(nextCarousel, 5000)
+})
+
+// --- GALERÍA MODAL ---
+const showGalleryModal = ref(false)
+const galleryImages = ref([])
+const galleryTitle = ref('')
+
+async function verImagenes(aniversario) {
+  galleryTitle.value = `Fotos de ${aniversario.nombre}`
+  isLoading.value = true
+  try {
+    if (backendConnected.value) {
+      const res = await imagenesAPI.getByAniversario(aniversario.id)
+      galleryImages.value = res.data.map(i => i.url)
+    } else {
+      galleryImages.value = imagenesPorAnio.value[aniversario.anio] || []
+    }
+    showGalleryModal.value = true
+  } catch (error) {
+    mostrarToast('Error al cargar imágenes', 'error')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 function refrescarImagenesDesdeMapa() {
@@ -1090,17 +1210,26 @@ input:focus, select:focus { border-color: #1B3573; background: white; box-shadow
 
 .filter-select { padding: 12px 16px; border-radius: 12px; border: 1.5px solid #e2e8f0; font-size: 14px; min-width: 180px; }
 
-.report-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+.report-table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
 .report-table th { text-align: left; padding: 15px; border-bottom: 2px solid #f1f5f9; color: #64748b; font-size: 11px; text-transform: uppercase; }
-.report-table td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+.report-table th.text-center { text-align: center; }
+.report-table td { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; vertical-align: middle; }
 .report-table code { background: #f1f5f9; padding: 4px 8px; border-radius: 6px; font-family: monospace; }
+
+.cell-content-wrapper { 
+  display: flex; 
+  justify-content: center; 
+  align-items: center; 
+  min-height: 40px;
+}
+.gap-sm { gap: 15px; }
+
 .empty-msg { text-align: center; padding: 50px !important; color: #94a3b8; }
 .text-center { text-align: center; }
 
 .badge { padding: 4px 12px; border-radius: 15px; color: white; font-weight: bold; font-size: 10px; text-transform: uppercase; }
 
-.actions-cell { display: flex; gap: 8px; justify-content: center; }
-.action-btn { background: none; border: none; cursor: pointer; font-size: 16px; padding: 6px; border-radius: 8px; transition: 0.2s; }
+.action-btn { background: none; border: none; cursor: pointer; font-size: 20px; padding: 6px; border-radius: 8px; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; }
 .action-btn:hover { background: #f1f5f9; }
 .action-btn.delete:hover { background: #fee2e2; }
 
@@ -1134,8 +1263,170 @@ input:focus, select:focus { border-color: #1B3573; background: white; box-shadow
 .text-gradient {
   background: linear-gradient(135deg, #1b3573 0%, #3b82f6 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   font-weight: 800;
+}
+
+/* CARRUSEL */
+.carousel-panel {
+  display: flex;
+  flex-direction: column;
+}
+.panel-header-inline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.carousel-year-badge {
+  background: #1b3573;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.carousel-container {
+  flex: 1;
+  min-height: 250px;
+  background: #f8fafc;
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+}
+.carousel-viewport {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+.carousel-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Slide Transition */
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-enter-from {
+  opacity: 0;
+  transform: translateX(-100%);
+}
+
+.slide-leave-to {
+  opacity: 0;
+  transform: translateX(100%);
+}
+.carousel-controls {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+  pointer-events: none;
+}
+.carousel-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e2e8f0;
+  color: #09124D;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  transition: 0.2s;
+}
+.carousel-btn:hover {
+  background: white;
+  transform: scale(1.1);
+}
+.carousel-indicators {
+  position: absolute;
+  bottom: 12px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+}
+.indicator.active {
+  background: white;
+  width: 20px;
+  border-radius: 4px;
+}
+.empty-carousel {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* GALERÍA */
+.gallery-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+  padding: 10px 0;
+}
+.gallery-item {
+  border-radius: 12px;
+  overflow: hidden;
+  height: 150px;
+  border: 1px solid #e2e8f0;
+  transition: transform 0.2s;
+}
+.gallery-item:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+.empty-gallery {
+  padding: 40px;
+  text-align: center;
+  color: #64748b;
+}
+
+.btn-text-icon {
+  background: #f0f7ff;
+  border: 1px solid #dbeafe;
+  color: #1b3573;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.btn-text-icon:hover {
+  background: #dbeafe;
+  transform: scale(1.02);
 }
 
 .welcome-hero {

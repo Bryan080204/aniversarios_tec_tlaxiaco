@@ -3,15 +3,16 @@
 -- Base de datos: PostgreSQL
 -- =====================================================
 
--- Crear esquema si no existe
-CREATE SCHEMA IF NOT EXISTS aniversario;
+-- Forzar limpieza del esquema anterior para eliminar tablas obsoletas (alumnos, etc.)
+DROP SCHEMA IF EXISTS aniversario CASCADE;
+CREATE SCHEMA aniversario;
 SET search_path TO aniversario, public;
 
 -- =====================================================
 -- TABLA: aniversarios
 -- Almacena los registros de aniversarios institucionales
 -- =====================================================
-CREATE TABLE IF NOT EXISTS aniversarios (
+CREATE TABLE aniversarios (
     id SERIAL PRIMARY KEY,
     nombre VARCHAR(255) NOT NULL,
     anio INTEGER NOT NULL,
@@ -27,7 +28,7 @@ CREATE TABLE IF NOT EXISTS aniversarios (
 -- TABLA: imagenes_aniversario
 -- Almacena las URLs de imágenes asociadas a cada aniversario
 -- =====================================================
-CREATE TABLE IF NOT EXISTS imagenes_aniversario (
+CREATE TABLE imagenes_aniversario (
     id SERIAL PRIMARY KEY,
     aniversario_id INTEGER NOT NULL REFERENCES aniversarios(id) ON DELETE CASCADE,
     url TEXT NOT NULL,
@@ -40,7 +41,7 @@ CREATE TABLE IF NOT EXISTS imagenes_aniversario (
 -- TABLA: eventos
 -- Almacena eventos especiales del TEC
 -- =====================================================
-CREATE TABLE IF NOT EXISTS eventos (
+CREATE TABLE eventos (
     id SERIAL PRIMARY KEY,
     nombre VARCHAR(255) NOT NULL,
     descripcion TEXT,
@@ -52,10 +53,10 @@ CREATE TABLE IF NOT EXISTS eventos (
 -- =====================================================
 -- ÍNDICES para mejorar rendimiento
 -- =====================================================
-CREATE INDEX IF NOT EXISTS idx_aniversarios_anio ON aniversarios(anio);
-CREATE INDEX IF NOT EXISTS idx_aniversarios_estado ON aniversarios(estado);
-CREATE INDEX IF NOT EXISTS idx_imagenes_aniversario_id ON imagenes_aniversario(aniversario_id);
-CREATE INDEX IF NOT EXISTS idx_eventos_anio ON eventos(anio);
+CREATE INDEX idx_aniversarios_anio ON aniversarios(anio);
+CREATE INDEX idx_aniversarios_estado ON aniversarios(estado);
+CREATE INDEX idx_imagenes_aniversario_id ON imagenes_aniversario(aniversario_id);
+CREATE INDEX idx_eventos_anio ON eventos(anio);
 
 -- =====================================================
 -- FUNCIÓN: Actualizar fecha_actualizacion automáticamente
@@ -69,16 +70,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger para aniversarios
-DROP TRIGGER IF EXISTS trigger_actualizar_aniversarios ON aniversarios;
 CREATE TRIGGER trigger_actualizar_aniversarios
     BEFORE UPDATE ON aniversarios
     FOR EACH ROW
     EXECUTE FUNCTION actualizar_fecha_modificacion();
-
--- =====================================================
--- DATOS DE EJEMPLO (opcional)
--- =====================================================
--- INSERT INTO aniversarios (nombre, anio, descripcion, estado) VALUES
---     ('Aniversario 2024', 2024, 'Celebración del aniversario institucional', 2),
---     ('Aniversario 2025', 2025, 'Feria tecnológica y actividades académicas', 1),
---     ('Aniversario 2026', 2026, 'Evento cultural y deportivo', 0);
