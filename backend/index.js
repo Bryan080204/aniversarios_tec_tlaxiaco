@@ -177,12 +177,12 @@ app.get('/api/aniversarios', tokenOpcional, async (req, res) => {
   try {
     const { buscar, anio, estado } = req.query;
     let filtros = { buscar, anio, estado };
-    
+
     // Si es usuario regular (no admin), solo mostrar validados
     if (!req.usuario || req.usuario.rol !== 'admin') {
       filtros.estado = 2;
     }
-    
+
     const aniversarios = await database.getAllAniversarios(filtros);
     res.json(aniversarios);
   } catch (error) {
@@ -217,8 +217,8 @@ app.get('/api/aniversarios/anio/:anio', async (req, res) => {
   }
 });
 
-// Crear nuevo aniversario
-app.post('/api/aniversarios', verificarToken, soloAdmin, async (req, res) => {
+// Crear nuevo aniversario (Cualquier usuario logueado puede registrar)
+app.post('/api/aniversarios', verificarToken, async (req, res) => {
   try {
     const { nombre, anio, descripcion } = req.body;
 
@@ -233,10 +233,10 @@ app.post('/api/aniversarios', verificarToken, soloAdmin, async (req, res) => {
     }
 
     const nombreGenerado = nombre || `Aniversario ${anio}`;
-    const nuevoAniversario = await database.createAniversario({ 
-      nombre: nombreGenerado, 
-      anio, 
-      descripcion 
+    const nuevoAniversario = await database.createAniversario({
+      nombre: nombreGenerado,
+      anio,
+      descripcion
     });
 
     res.status(201).json(nuevoAniversario);
@@ -279,7 +279,7 @@ app.delete('/api/aniversarios/:id', verificarToken, soloAdmin, async (req, res) 
         await eliminarArchivo(img.ruta_archivo);
       }
     }
-    
+
     const deleted = await database.deleteAniversario(req.params.id);
     if (!deleted) {
       return res.status(404).json({ error: 'Aniversario no encontrado' });
@@ -313,9 +313,8 @@ app.get('/api/aniversarios/:id/imagenes', async (req, res) => {
 });
 
 // Subir imágenes a un aniversario (archivos)
-app.post('/api/aniversarios/:id/imagenes', 
-  verificarToken, 
-  soloAdmin,
+app.post('/api/aniversarios/:id/imagenes',
+  verificarToken,
   uploadAniversarios.array('imagenes', 6),
   handleMulterError,
   async (req, res) => {
@@ -411,12 +410,12 @@ app.delete('/api/imagenes/:id', verificarToken, soloAdmin, async (req, res) => {
     if (!imagen) {
       return res.status(404).json({ error: 'Imagen no encontrada' });
     }
-    
+
     // Eliminar archivo físico si no es una URL externa
     if (imagen.ruta_archivo && imagen.ruta_archivo.startsWith('/uploads')) {
       await eliminarArchivo(imagen.ruta_archivo);
     }
-    
+
     res.json({ message: 'Imagen eliminada correctamente' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -501,10 +500,10 @@ app.put('/api/validacion/:tipo/:id', verificarToken, soloAdmin, async (req, res)
     }
 
     const resultado = await database.validarRegistro(tipo, id, estado, req.usuario.id, comentario);
-    
-    res.json({ 
-      message: 'Registro validado correctamente', 
-      data: resultado 
+
+    res.json({
+      message: 'Registro validado correctamente',
+      data: resultado
     });
   } catch (error) {
     if (error.message === 'Registro no encontrado') {
@@ -587,10 +586,10 @@ app.put('/api/validacion/:tipo/:id', verificarToken, soloAdmin, async (req, res)
     }
 
     const resultado = await database.validarRegistro(tipo, id, estado, req.usuario.id, comentario);
-    
-    res.json({ 
-      message: 'Registro validado correctamente', 
-      data: resultado 
+
+    res.json({
+      message: 'Registro validado correctamente',
+      data: resultado
     });
   } catch (error) {
     if (error.message === 'Registro no encontrado') {
@@ -634,10 +633,10 @@ app.get('/api/validacion/historial', verificarToken, soloAdmin, async (req, res)
 app.delete('/api/admin/vaciar', verificarToken, soloAdmin, async (req, res) => {
   try {
     const { confirmacion } = req.body;
-    
+
     if (confirmacion !== 'CONFIRMAR_VACIAR_BD') {
-      return res.status(400).json({ 
-        error: 'Debe enviar confirmacion: "CONFIRMAR_VACIAR_BD" para vaciar la base de datos' 
+      return res.status(400).json({
+        error: 'Debe enviar confirmacion: "CONFIRMAR_VACIAR_BD" para vaciar la base de datos'
       });
     }
 

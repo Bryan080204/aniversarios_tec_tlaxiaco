@@ -31,13 +31,13 @@ export const database = {
   // ============================================================
   // USUARIOS Y AUTENTICACIÓN
   // ============================================================
-  
+
   /**
    * Obtener usuario por username
    */
   async getUsuarioByUsername(username) {
     const result = await pool.query(
-      'SELECT * FROM usuarios WHERE username = $1 AND activo = true',
+      'SELECT * FROM aniversario.usuarios WHERE username = $1',
       [username]
     );
     return result.rows[0];
@@ -48,7 +48,7 @@ export const database = {
    */
   async getUsuarioById(id) {
     const result = await pool.query(
-      'SELECT id, username, nombre_completo, email, rol, activo, ultimo_acceso, fecha_creacion FROM usuarios WHERE id = $1',
+      'SELECT id, username, nombre_completo, email, rol, activo, ultimo_acceso, fecha_creacion FROM aniversario.usuarios WHERE id = $1',
       [id]
     );
     return result.rows[0];
@@ -59,7 +59,7 @@ export const database = {
    */
   async getAllUsuarios() {
     const result = await pool.query(
-      'SELECT id, username, nombre_completo, email, rol, activo, ultimo_acceso, fecha_creacion FROM usuarios ORDER BY fecha_creacion DESC'
+      'SELECT id, username, nombre_completo, email, rol, activo, ultimo_acceso, fecha_creacion FROM aniversario.usuarios ORDER BY fecha_creacion DESC'
     );
     return result.rows;
   },
@@ -130,15 +130,22 @@ export const database = {
    * Verificar credenciales de usuario
    */
   async verificarCredenciales(username, password) {
+    console.log('Verificando credenciales para:', username);
     const usuario = await this.getUsuarioByUsername(username);
-    if (!usuario) return null;
+    if (!usuario) {
+      console.log('Usuario no encontrado:', username);
+      return null;
+    }
 
+    console.log('Usuario encontrado, comparando passwords...');
     const passwordValido = await bcrypt.compare(password, usuario.password_hash);
+    console.log('¿Password válido?:', passwordValido);
+
     if (!passwordValido) return null;
 
     // Actualizar último acceso
     await pool.query(
-      'UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id = $1',
+      'UPDATE aniversario.usuarios SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id = $1',
       [usuario.id]
     );
 
@@ -155,7 +162,7 @@ export const database = {
   // ANIVERSARIOS
   // ============================================================
   async getAllAniversarios(filters = {}) {
-    let query = 'SELECT * FROM aniversarios';
+    let query = 'SELECT * FROM aniversario.aniversarios';
     const params = [];
     const conditions = [];
     let paramIndex = 1;
@@ -188,7 +195,7 @@ export const database = {
   },
 
   async getAniversarioById(id) {
-    const result = await pool.query('SELECT * FROM aniversarios WHERE id = $1', [id]);
+    const result = await pool.query('SELECT * FROM aniversario.aniversarios WHERE id = $1', [id]);
     return result.rows[0];
   },
 
@@ -199,7 +206,7 @@ export const database = {
 
   async createAniversario(data) {
     const result = await pool.query(
-      `INSERT INTO aniversarios (nombre, anio, descripcion, estado) 
+      `INSERT INTO aniversario.aniversarios (nombre, anio, descripcion, estado) 
        VALUES ($1, $2, $3, 0) 
        RETURNING *`,
       [data.nombre, data.anio, data.descripcion || '']
@@ -230,7 +237,7 @@ export const database = {
   // ===== IMÁGENES DE ANIVERSARIOS =====
   async getImagenesByAniversarioId(aniversarioId) {
     const result = await pool.query(
-      'SELECT * FROM imagenes_aniversario WHERE aniversario_id = $1 ORDER BY orden ASC',
+      'SELECT * FROM aniversario.imagenes_aniversario WHERE aniversario_id = $1 ORDER BY orden ASC',
       [aniversarioId]
     );
     return result.rows;
@@ -239,8 +246,8 @@ export const database = {
   async getAllImagenes() {
     const result = await pool.query(`
       SELECT i.*, a.nombre as aniversario_nombre, a.anio
-      FROM imagenes_aniversario i
-      JOIN aniversarios a ON i.aniversario_id = a.id
+      FROM aniversario.imagenes_aniversario i
+      JOIN aniversario.aniversarios a ON i.aniversario_id = a.id
       ORDER BY a.anio DESC, i.orden ASC
     `);
     return result.rows;
@@ -256,13 +263,13 @@ export const database = {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
        RETURNING *`,
       [
-        data.aniversario_id, 
-        data.nombre_archivo, 
+        data.aniversario_id,
+        data.nombre_archivo,
         data.nombre_original || data.nombre_archivo,
-        data.ruta_archivo, 
+        data.ruta_archivo,
         data.tipo_mime || 'image/jpeg',
         data.tamano_bytes || 0,
-        data.orden || 0, 
+        data.orden || 0,
         data.descripcion || '',
         data.subido_por || null
       ]
@@ -277,19 +284,19 @@ export const database = {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      
+
       const imagenes = [];
       for (let i = 0; i < archivos.length; i++) {
         const archivo = archivos[i];
         const result = await client.query(
-          `INSERT INTO imagenes_aniversario 
+          `INSERT INTO aniversario.imagenes_aniversario 
            (aniversario_id, nombre_archivo, nombre_original, ruta_archivo, tipo_mime, tamano_bytes, orden, subido_por) 
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
           [
-            aniversarioId, 
+            aniversarioId,
             archivo.nombre_archivo,
             archivo.nombre_original,
-            archivo.ruta_archivo, 
+            archivo.ruta_archivo,
             archivo.tipo_mime,
             archivo.tamano_bytes,
             i,
@@ -298,7 +305,7 @@ export const database = {
         );
         imagenes.push(result.rows[0]);
       }
-      
+
       await client.query('COMMIT');
       return imagenes;
     } catch (error) {
@@ -345,7 +352,7 @@ export const database = {
 
   // ===== EVENTOS =====
   async getAllEventos() {
-    const result = await pool.query('SELECT * FROM eventos ORDER BY fecha_creacion DESC');
+    const result = await pool.query('SELECT * FROM aniversario.eventos ORDER BY fecha_creacion DESC');
     return result.rows;
   },
 
@@ -369,10 +376,10 @@ export const database = {
 
   // ===== ESTADÍSTICAS =====
   async getEstadisticas() {
-    const totalAniversarios = await pool.query('SELECT COUNT(*) as total FROM aniversarios');
-    const totalEventos = await pool.query('SELECT COUNT(*) as total FROM eventos');
-    const totalImagenes = await pool.query('SELECT COUNT(*) as total FROM imagenes_aniversario');
-    const totalUsuarios = await pool.query('SELECT COUNT(*) as total FROM usuarios WHERE activo = true');
+    const totalAniversarios = await pool.query('SELECT COUNT(*) as total FROM aniversario.aniversarios');
+    const totalEventos = await pool.query('SELECT COUNT(*) as total FROM aniversario.eventos');
+    const totalImagenes = await pool.query('SELECT COUNT(*) as total FROM aniversario.imagenes_aniversario');
+    const totalUsuarios = await pool.query('SELECT COUNT(*) as total FROM aniversario.usuarios WHERE activo = true');
 
     const porAnio = await pool.query(
       'SELECT anio, COUNT(*) as cantidad FROM aniversarios GROUP BY anio ORDER BY anio DESC'
@@ -407,7 +414,7 @@ export const database = {
         fecha_actualizacion
       FROM aniversarios
     `;
-    
+
     const params = [];
     const conditions = [];
     let paramIndex = 1;
@@ -421,7 +428,7 @@ export const database = {
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    
+
     query += ' ORDER BY fecha_registro DESC';
 
     const aniversarios = await pool.query(query, params);
@@ -444,7 +451,7 @@ export const database = {
     if (conditions.length > 0) {
       queryEventos += ' WHERE ' + conditions.join(' AND ').replace('fecha_registro', 'fecha_creacion');
     }
-    
+
     queryEventos += ' ORDER BY fecha_creacion DESC';
 
     const eventos = await pool.query(queryEventos, params);
@@ -496,21 +503,21 @@ export const database = {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      
+
       const tabla = tipo === 'aniversario' ? 'aniversarios' : 'eventos';
       const numericId = id.includes('-') ? id.split('-')[1] : id;
-      
+
       // Obtener estado anterior
       const actual = await client.query(`SELECT estado FROM ${tabla} WHERE id = $1`, [numericId]);
       if (actual.rows.length === 0) {
         throw new Error('Registro no encontrado');
       }
       const estadoAnterior = actual.rows[0].estado;
-      
+
       // Actualizar estado
       let updateQuery = `UPDATE ${tabla} SET estado = $1`;
       const updateParams = [nuevoEstado];
-      
+
       if (tipo === 'aniversario' && nuevoEstado === 2) {
         updateQuery += ', validado_por = $2, fecha_validacion = CURRENT_TIMESTAMP WHERE id = $3';
         updateParams.push(usuarioId, numericId);
@@ -518,17 +525,17 @@ export const database = {
         updateQuery += ' WHERE id = $2';
         updateParams.push(numericId);
       }
-      
+
       updateQuery += ' RETURNING *';
       const resultado = await client.query(updateQuery, updateParams);
-      
+
       // Registrar en log
       await client.query(
         `INSERT INTO log_validaciones (tipo, registro_id, estado_anterior, estado_nuevo, validado_por, comentario)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [tipo, numericId, estadoAnterior, nuevoEstado, usuarioId, comentario]
       );
-      
+
       await client.query('COMMIT');
       return resultado.rows[0];
     } catch (error) {
@@ -575,7 +582,7 @@ export const database = {
       const tabla = tipo === 'aniversario' ? 'aniversarios' : 'eventos';
       // Extract numeric ID from composite ID (e.g., "aniversario-5" -> 5)
       const numericId = id.includes('-') ? id.split('-')[1] : id;
-      
+
       const result = await pool.query(
         `UPDATE ${tabla} SET estado = $1 WHERE id = $2 RETURNING *`,
         [estado, numericId]

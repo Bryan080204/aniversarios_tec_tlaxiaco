@@ -52,8 +52,8 @@
             </section>
           </transition>
 
-          <!-- SOLO MOSTRAR FORMULARIO EN REGISTRO (NO EN INICIO) -->
-          <div v-if="active === 'registro'" class="content">
+          <!-- SOLO MOSTRAR FORMULARIO EN REGISTRO SI ESTÁ AUTENTICADO -->
+          <div v-if="active === 'registro' && isAuthenticated" class="content">
             <section class="panel registration-card">
               <div class="panel-header">
                 <div class="header-title">
@@ -587,6 +587,19 @@ const imagenesPorAnio = ref({})
 const imageEditorMode = ref('edit')
 const imageEditorIndex = ref(-1)
 const imageEditorUrl = ref('')
+const ultimosRegistros = computed(() => {
+  return listaAniversarios.value.slice(0, 5)
+})
+const galeriaImagenes = computed(() => {
+  const result = []
+  listaAniversarios.value.forEach(aniv => {
+    const images = imagenesPorAnio.value[aniv.anio] || []
+    images.forEach(url => {
+      result.push({ url, anio: aniv.anio, id: aniv.id })
+    })
+  })
+  return result
+})
 const demoRegistros = [
   {
     id: 'demo-2026',
@@ -638,13 +651,18 @@ async function handleLogin() {
   
   try {
     const response = await authAPI.login(loginForm.value.username, loginForm.value.password)
-    authAPI.setToken(response.data.token, response.data.usuario)
+    const { token, usuario } = response.data
+    
+    authAPI.setToken(token)
+    authAPI.setUsuario(usuario)
+    
     isAuthenticated.value = true
-    isAdmin.value = response.data.usuario.rol === 'admin'
-    currentUser.value = response.data.usuario
+    isAdmin.value = usuario.rol === 'admin'
+    currentUser.value = usuario
+    
     showLoginModal.value = false
     loginForm.value = { username: '', password: '' }
-    mostrarToast(`Bienvenido, ${response.data.usuario.nombre}`, 'success')
+    mostrarToast(`Bienvenido, ${usuario.nombre_completo || usuario.username}`, 'success')
     await cargarDatos()
   } catch (error) {
     loginError.value = error.response?.data?.error || 'Error al iniciar sesión'
@@ -889,6 +907,13 @@ watch(() => route.meta.section, (newSection) => {
 })
 
 function handleMenuSelect(section) {
+  // Proteger sección de registro
+  if (section === 'registro' && !isAuthenticated.value) {
+    showLoginModal.value = true
+    mostrarToast('Por favor, inicie sesión para registrar', 'info')
+    return
+  }
+  
   active.value = section
   const routes = {
     'inicio': '/',
